@@ -1,0 +1,18 @@
+# Render Blueprint for Last Shell: ONE web service that serves both the React app and Socket.IO.
+# Nothing here is a secret. Render only reads this file when you create the Blueprint yourself
+# (see docs/DEPLOYMENT.md); having it in the repo deploys nothing.
+services:
+  - type: web
+    name: last-shell
+    runtime: node
+    plan: free # free instance: sleeps after 15 min without traffic. Change to "starter" for always-on (see docs/DEPLOYMENT.md).
+    region: oregon # pick the region closest to your players; it cannot be changed later
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: "off" # deploy only when you press the button (quoted: bare `off` is a boolean in YAML)
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1" # one reverse proxy in front of the service; see docs/DEPLOYMENT.md to verify

@@ -1,0 +1,32 @@
+{
+  "name": "last-shell-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Browser multiplayer version of Last Shell (server-authoritative).",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "npm run build -w @lastshell/web",
+    "build:server": "npm run build -w @lastshell/server",
+    "start": "node apps/server/dist/index.mjs",
+    "test": "npm run test -w @lastshell/server && npm run test -w @lastshell/web",
+    "smoke": "npm run smoke -w @lastshell/server",
+    "typecheck": "npm run typecheck -w @lastshell/shared && npm run typecheck -w @lastshell/server && npm run typecheck -w @lastshell/web",
+    "dev:web": "npm run dev -w @lastshell/web",
+    "dev:mock": "npm run dev:mock -w @lastshell/web",
+    "dev:server": "npm run dev -w @lastshell/server",
+    "start:server": "npm run start -w @lastshell/server"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

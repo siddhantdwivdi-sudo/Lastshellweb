@@ -1,0 +1,22 @@
+/* Design tokens: colours are taken from the Godot prototype (ui_manager.gd). Dark only, by design. */
+:root {
+  color-scheme: dark;
+
+  --bg: #090709;
+  --text: #ede0ca;
+  --dim: #9e9285;
+  --amber: #ffa838;
+  --red: #eb2b1f;
+  --blue: #739ef2;
+  --good: #6be080;
+
+  --surface: rgba(26, 19, 18, 0.94);
+  --surface-solid: #150f0f;
+  --edge: rgba(255, 168, 56, 0.28);
+
+  --font: "Oswald", "Bahnschrift", "Segoe UI", "Arial Narrow", Arial, sans-serif;
+
+  --tap: 44px;
+  --gutter: 16px;
+  --radius: 8px;
+}
