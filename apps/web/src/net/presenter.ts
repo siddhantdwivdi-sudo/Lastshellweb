@@ -3,7 +3,7 @@
 
 import { ITEM_DEFS, type ClientEvent, type PrivateView, type PublicGameView, type RoomState } from "@lastshell/shared";
 import { seatName } from "../lib/layout";
-import type { AimModel, BannerModel, FxModel, GameUiModel, MessageModel, ReloadModel } from "../ui/model";
+import { NO_CUES, type AimModel, type BannerModel, type FxModel, type GameUiModel, type MessageModel, type ReloadModel, type SceneCues } from "../ui/model";
 
 const RED = "#EB2B1F";
 const BLUE = "#739EF2";
@@ -18,6 +18,7 @@ export interface DisplayState {
   aim: AimModel | null;
   fx: FxModel | null;
   reload: ReloadModel | null;
+  cues: SceneCues;
 }
 
 let nextId = 1;
@@ -27,7 +28,7 @@ export function newId(): number {
 }
 
 export function displayFrom(view: PublicGameView, priv: PrivateView): DisplayState {
-  return { view, private: priv, banner: null, message: null, aim: null, fx: null, reload: null };
+  return { view, private: priv, banner: null, message: null, aim: null, fx: null, reload: null, cues: NO_CUES };
 }
 
 /** Applies ONE server event to the display (state first, then the animation cues for it). */
@@ -38,7 +39,7 @@ export function applyEvent(prev: DisplayState | null, ev: ClientEvent): DisplayS
 
   switch (ev.type) {
     case "matchStarted":
-      return { ...base, banner: null, message: null, aim: null, fx: null };
+      return { ...base, banner: null, message: null, aim: null, fx: null, cues: NO_CUES };
     case "reload":
       return { ...base, reload: { loadNumber: ev.loadNumber, live: ev.live, blank: ev.blank } };
     case "turnBegan":
@@ -48,6 +49,10 @@ export function applyEvent(prev: DisplayState | null, ev: ClientEvent): DisplayS
     case "shotResolved":
       return {
         ...base,
+        cues: {
+          ...base.cues,
+          shot: { id: newId(), shooter: ev.shooter, target: ev.target, live: ev.live, damage: ev.damage, selfShot: ev.selfShot },
+        },
         banner: { id: newId(), text: ev.live ? "LIVE" : "BLANK", color: ev.live ? RED : BLUE },
         message: { id: newId(), text: ev.message, bad: ev.live },
         fx: ev.live ? { id: newId(), kind: "flash-live", shake: true } : { id: newId(), kind: "flash-blank" },
@@ -56,6 +61,7 @@ export function applyEvent(prev: DisplayState | null, ev: ClientEvent): DisplayS
       const def = ITEM_DEFS[ev.item];
       return {
         ...base,
+        cues: { ...base.cues, item: { id: newId(), seat: ev.seat, item: ev.item, hpChange: ev.hpChange, eject: ev.eject } },
         banner: { id: newId(), text: def.name, color: def.color },
         message: { id: newId(), text: ev.text, bad: ev.hpChange < 0 },
         fx: { id: newId(), kind: "flash-item", color: def.color, shake: ev.hpChange < 0 },
@@ -70,6 +76,7 @@ export function applyEvent(prev: DisplayState | null, ev: ClientEvent): DisplayS
     case "eliminated":
       return {
         ...base,
+        cues: { ...base.cues, elim: { id: newId(), seat: ev.seat } },
         banner: { id: newId(), text: `${seatName(ev.seat)} OUT`, color: RED },
         message: { id: newId(), text: `${seatName(ev.seat)} IS ELIMINATED`, bad: true },
         fx: { id: newId(), kind: "flash-out", shake: true },
@@ -107,5 +114,6 @@ export function buildGameModel(i: ModelInputs): GameUiModel {
     aim: d.aim,
     fx: d.fx,
     reload: d.reload,
+    cues: d.cues,
   };
 }

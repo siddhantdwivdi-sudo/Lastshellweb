@@ -17,6 +17,26 @@ export const SCENARIOS: Scenario[] = [
   { id: "your-turn", label: "Your turn (intel)", build: (s) => clone(s[1].model) },
   { id: "opponent-turn", label: "Opponent's turn", build: (s) => clone(s[3].model) },
   { id: "result-live", label: "Shot result: LIVE", build: (s) => clone(s[2].model) },
+  {
+    id: "aim-neighbor",
+    label: "Opponent aims at the other opponent",
+    build: (s, you) => {
+      const m = clone(s[3].model);
+      const { left, right } = opponentsOf(you);
+      m.aim = { shooter: left, target: right, shotId: 1 };
+      return m;
+    },
+  },
+  {
+    id: "aim-self",
+    label: "Opponent turns the gun on themselves",
+    build: (s, you) => {
+      const m = clone(s[3].model);
+      const { left } = opponentsOf(you);
+      m.aim = { shooter: left, target: left, shotId: 1 };
+      return m;
+    },
+  },
   { id: "inverter", label: "Outdated info (Inverter)", build: (s) => clone(s[6].model) },
   { id: "reload", label: "Reload overlay", build: (s) => clone(s[0].model) },
   { id: "elimination", label: "Elimination", build: (s) => clone(s[10].model) },

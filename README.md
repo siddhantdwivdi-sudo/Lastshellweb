@@ -16,7 +16,8 @@ apps/web/             React + TypeScript + Vite frontend.
   src/net/            The Socket.IO client adapter (gameClient.ts), event playback, React hook. No game rules.
   src/app/            AppController (what screens need) + AppView (picks the screen).
   src/screens/        Title and lobby screens.
-  src/game/           Game screen: panels, shotgun, shell row, inventory, dialogs, overlays.
+  src/scene/          The cinematic table scene: figures, cast/artwork manifest, animations driven by server events.
+  src/game/           Game screen: panels, shell row, inventory, dialogs, overlays (HUD over the scene).
   src/components/     Shared pieces (buttons, accessible dialog, toast, rules, backdrop).
   src/mock/           DEVELOPMENT ONLY: canned data to explore the UI without a server.
   src/ui/model.ts     The shapes the screens render.
@@ -32,8 +33,27 @@ apps/server/
   tests/integration/  The real frontend client against the real server (three players).
 ```
 
-Also in the repository: `docs/DEPLOYMENT.md` (deployment guide), `render.yaml` (Render blueprint),
-`.env.example` (environment variables), `.node-version` (Node 24).
+Also in the repository: `docs/DEPLOYMENT.md` (deployment guide), `docs/ART.md` (character artwork spec),
+`render.yaml` (Render blueprint), `.env.example` (environment variables), `.node-version` (Node 24).
+
+## The game scene (cinematic UI)
+
+The game screen is a dark room seen from your seat: a hanging lamp, a worn wooden table, film grain and vignette,
+and the two opponents sitting across the table with shotguns pointed at you. It is layered 2D art animated with CSS
+(no 3D engine, no video), so it stays light on phones and fits Render's free plan.
+
+- **Everything that moves comes from server-confirmed events.** The server's `shotFired` makes the shooter turn and
+  aim (at you, at the other opponent, or at themselves); `shotResolved` says live or blank, so a live shell gets the
+  recoil, muzzle flash, smoke, camera shake and a flinch on whoever was hit, a blank gets a dry click; your own
+  damage shows a red hit effect and a heartbeat vignette at 1 HP; `eliminated` makes the figure slump and go dark.
+  The frontend never decides an outcome. (`apps/web/src/net/presenter.ts` copies the event facts into "cues";
+  `apps/web/src/scene/sceneState.ts` maps them to poses, with unit tests.)
+- **Idle life:** breathing, small head movement and blinking; the player whose turn it is is lit more strongly.
+- **HUD:** each opponent's health, status and items sit above their figure; the shell counters, your private intel
+  and the latest message are on the table in front of you; your items and the shoot buttons are along the edge.
+- **Character artwork is not final.** The two men are currently interim vector silhouettes. Realistic characters
+  need real images; see [docs/ART.md](docs/ART.md) for what is needed, the options, prompts and where to drop the
+  files (`apps/web/src/scene/cast.ts`). No art has been generated, bought or downloaded.
 
 ## Requirements
 

@@ -1,9 +1,12 @@
-import { S2C } from "@lastshell/shared";
+import { EVENT_DURATION_MS, S2C } from "@lastshell/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeState } from "./helpers";
 import { makeMatch, newManager, newPeer, send, type Lobby } from "./room-helpers";
 
 let lobby: Lobby;
+/** shotFired + shotResolved + eliminated + gameOver */
+const FINAL_MS =
+  EVENT_DURATION_MS.shotFired + EVENT_DURATION_MS.shotResolved + EVENT_DURATION_MS.eliminated + EVENT_DURATION_MS.gameOver;
 
 /** A finished match: seat 0 has just shot seat 1, the last opponent. */
 function finishedMatch(busyScale = 0): Lobby {
@@ -39,14 +42,14 @@ describe("PLAY AGAIN", () => {
     finishedMatch(1);
     expect(lobby.room.busy).toBe(true);
     expect(lobby.manager.playAgain(lobby.peers[0])).toMatchObject({ ok: false, code: "BUSY" });
-    vi.advanceTimersByTime(4200); // 900 + 1200 + 1500 + 600
+    vi.advanceTimersByTime(FINAL_MS);
     expect(lobby.manager.playAgain(lobby.peers[0])).toMatchObject({ ok: true });
   });
 
   it("does not announce the end of the match before its animation is over", () => {
     finishedMatch(1);
     expect(lobby.peers[1].last(S2C.roomState).status).not.toBe("GAME_OVER");
-    vi.advanceTimersByTime(4200); // 900 + 1200 + 1500 + 600
+    vi.advanceTimersByTime(FINAL_MS);
     expect(lobby.peers[1].last(S2C.roomState).status).toBe("GAME_OVER");
   });
 

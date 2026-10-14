@@ -1,4 +1,4 @@
-import { C2S, S2C, type ClientEvent } from "@lastshell/shared";
+import { C2S, EVENT_DURATION_MS, S2C, type ClientEvent } from "@lastshell/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameClient, memoryStore, type KeyValueStore } from "./gameClient";
 import { applyEvent, displayFrom } from "./presenter";
@@ -254,7 +254,7 @@ describe("event playback", () => {
     const v2 = view({ current: 1, fired: 1 });
     rig.socket.push(
       S2C.events,
-      batch(6, 2100, [
+      batch(6, EVENT_DURATION_MS.shotFired + EVENT_DURATION_MS.shotResolved, [
         ev({ type: "shotFired", shooter: 0, target: 1 }, v1),
         ev({ type: "shotResolved", shooter: 0, target: 1, live: true, damage: 1, selfShot: false, message: "hit" }, v1),
         ev({ type: "turnBegan", seat: 1, announce: true }, v2),
@@ -263,10 +263,10 @@ describe("event playback", () => {
     expect(rig.state().display?.aim).not.toBeNull(); // first event shown immediately
     expect(rig.state().display?.banner).toBeNull();
     expect(rig.state().display?.view.current).toBe(0);
-    await vi.advanceTimersByTimeAsync(900);
+    await vi.advanceTimersByTimeAsync(EVENT_DURATION_MS.shotFired);
     expect(rig.state().display?.banner?.text).toBe("LIVE");
     expect(rig.state().display?.view.current).toBe(0);
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(EVENT_DURATION_MS.shotResolved);
     expect(rig.state().display?.view.current).toBe(1);
     // the table is still "busy" until the server says idle
     expect(rig.state().busy).toBe(true);

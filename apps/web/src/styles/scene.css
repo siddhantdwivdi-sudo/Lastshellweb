@@ -1,0 +1,829 @@
+/* ======================================================================================
+   The cinematic scene. Layered 2D artwork + CSS animation only (no canvas/WebGL, no video):
+   everything that moves animates transform/opacity, which stays smooth on ordinary phones.
+   ====================================================================================== */
+
+.scene {
+  --table-h: 40cqh;
+  --fig-h: min(48cqh, calc(42cqw / var(--aspect, 0.667)));
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  container-type: size;
+  background: #050405;
+  pointer-events: none;
+}
+.scene__world,
+.scene__plates {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------------------------------------------------------------- room */
+.scene__wall {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 62% 58% at 50% 24%, rgba(150, 96, 52, 0.26), rgba(150, 96, 52, 0.06) 55%, transparent 78%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.014) 0 2px, transparent 2px 26px),
+    linear-gradient(180deg, #0c0807 0%, #140e0b 52%, #060404 100%);
+}
+.scene__lamp {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 62cqw;
+  height: 78cqh;
+  translate: -50% 0;
+  animation: lampFlicker 7s steps(1) infinite;
+}
+.scene__cone {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(47% 0, 53% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(255, 206, 140, 0.24), rgba(255, 170, 96, 0.07) 62%, transparent);
+}
+.scene__bulb {
+  position: absolute;
+  left: 50%;
+  top: -1cqh;
+  width: 7cqh;
+  height: 7cqh;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff1cf 0 22%, rgba(255, 190, 110, 0.55) 40%, transparent 70%);
+}
+@keyframes lampFlicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  41% {
+    opacity: 0.88;
+  }
+  42% {
+    opacity: 1;
+  }
+  77% {
+    opacity: 0.94;
+  }
+  78% {
+    opacity: 1;
+  }
+}
+
+.scene__dust i {
+  position: absolute;
+  left: calc(24% + var(--i) * 3.7%);
+  top: calc(10% + var(--i) * 5.1%);
+  width: 0.5cqh;
+  height: 0.5cqh;
+  border-radius: 50%;
+  background: rgba(255, 220, 170, 0.5);
+  opacity: 0;
+  animation: dust calc(9s + var(--i) * 0.8s) linear infinite;
+  animation-delay: calc(var(--i) * -1.3s);
+}
+@keyframes dust {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  20%,
+  80% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(2.4cqw, 7cqh);
+  }
+}
+
+/* ---------------------------------------------------------------- figures */
+.scene__figures {
+  position: absolute;
+  inset: 0;
+}
+.fig {
+  position: absolute;
+  bottom: calc(var(--table-h) - 3.5cqh);
+  height: var(--fig-h);
+  aspect-ratio: var(--aspect);
+  filter: brightness(0.78); /* applied instantly (never animated: filters are costly to repaint on phones) */
+  transition:
+    rotate 0.35s ease,
+    translate 1s ease;
+}
+.fig::before {
+  /* the lamp's warm glow behind whoever's turn it is: opacity only */
+  content: "";
+  position: absolute;
+  inset: -8% -30% -4%;
+  background: radial-gradient(ellipse 50% 55% at 50% 45%, rgba(255, 150, 70, 0.28), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+.fig--turn::before {
+  opacity: 1;
+}
+.fig--left {
+  left: 27%;
+  translate: -50% 0;
+  rotate: 1.2deg;
+}
+.fig--right {
+  left: 73%;
+  translate: -50% 0;
+  rotate: -1.2deg;
+}
+.fig--turn {
+  filter: brightness(1.12);
+}
+.fig--aim-neighbor.fig--left {
+  rotate: 3.4deg;
+}
+.fig--aim-neighbor.fig--right {
+  rotate: -3.4deg;
+}
+.fig__breath {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 100%;
+  animation: breathe 4.6s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+.fig__breath > div,
+.fig__breath > div > div {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 100%;
+}
+.fig__img,
+.sil {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-0.7%) scale(1.007);
+  }
+}
+
+/* idle life inside the interim silhouettes */
+.sil-head {
+  transform-box: view-box;
+  transform-origin: 200px 340px;
+  animation: headSway 8s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes headSway {
+  0%,
+  100% {
+    transform: rotate(0deg) translateX(0);
+  }
+  30% {
+    transform: rotate(1.3deg) translateX(1.5px);
+  }
+  62% {
+    transform: rotate(-1.1deg) translateX(-1.5px);
+  }
+}
+.sil-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blink 5.6s infinite;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  95.5% {
+    transform: scaleY(0.08);
+  }
+}
+.sil-pose {
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+.sil--aim-player .sil-pose--player,
+.sil--aim-neighbor .sil-pose--neighbor,
+.sil--aim-self .sil-pose--self {
+  opacity: 1;
+}
+.sil-look-left {
+  transform-box: view-box;
+  transform-origin: 200px 0;
+  transform: scaleX(-1);
+}
+
+/* weapon feedback */
+.fig__recoil {
+  animation: recoil 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.fig__click {
+  animation: click 0.22s ease-out;
+}
+@keyframes recoil {
+  0% {
+    transform: translateY(0) rotate(0);
+  }
+  10% {
+    transform: translateY(2.8%) rotate(-1.8deg) scale(1.03);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes click {
+  0% {
+    transform: none;
+  }
+  35% {
+    transform: translateY(0.9%);
+  }
+  100% {
+    transform: none;
+  }
+}
+.fig__flinch {
+  position: relative;
+  animation: flinch 0.7s ease-out;
+}
+.fig__flinch::after {
+  content: "";
+  position: absolute;
+  inset: 12% 8% 0;
+  background: radial-gradient(ellipse 55% 50% at 50% 42%, rgba(210, 20, 10, 0.75), transparent 70%);
+  opacity: 0;
+  animation: flinchGlow 0.7s ease-out;
+  pointer-events: none;
+}
+@keyframes flinch {
+  0% {
+    transform: none;
+  }
+  12% {
+    transform: translate(-2.6%, 2%) rotate(-2.4deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes flinchGlow {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.fig__muzzle {
+  position: absolute;
+  left: var(--mx);
+  top: var(--my);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.muzzle {
+  position: absolute;
+  translate: -50% -50%;
+  pointer-events: none;
+}
+.muzzle--live {
+  width: 21cqh;
+  height: 21cqh;
+  animation: flash 0.26s ease-out forwards;
+}
+.muzzle--live::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 70cqh;
+  height: 70cqh;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 190, 100, 0.45), transparent 62%);
+}
+.muzzle--live svg {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+}
+.muzzle--dry {
+  width: 2.2cqh;
+  height: 2.2cqh;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff, rgba(255, 255, 255, 0.2) 60%, transparent 70%);
+  animation: dryClick 0.18s ease-out forwards;
+}
+@keyframes flash {
+  0% {
+    opacity: 1;
+    scale: 0.4;
+  }
+  30% {
+    opacity: 1;
+    scale: 1;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.15;
+  }
+}
+@keyframes dryClick {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.smoke {
+  position: absolute;
+  width: 9cqh;
+  height: 9cqh;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(205, 200, 195, 0.34), rgba(120, 118, 115, 0.12) 55%, transparent 72%);
+  opacity: 0;
+  animation: smoke 2.1s ease-out forwards;
+}
+.smoke--b {
+  animation-delay: 0.15s;
+  --dx: 3cqh;
+}
+.smoke--c {
+  animation-delay: 0.32s;
+  --dx: -3cqh;
+}
+.smoke--a {
+  --dx: 0.5cqh;
+}
+@keyframes smoke {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  14% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0), -15cqh) scale(2.6);
+  }
+}
+
+/* an eliminated opponent slumps over, the light goes out of them */
+.fig--dead {
+  filter: grayscale(0.85) brightness(0.36);
+  translate: -50% 17%;
+}
+.fig--dead.fig--left {
+  rotate: -9deg;
+}
+.fig--dead.fig--right {
+  rotate: 9deg;
+}
+.fig--dead .fig__breath,
+.fig--dead .sil-head,
+.fig--dead .sil-eye {
+  animation: none;
+}
+.fig--dead .sil-pose {
+  opacity: 0 !important;
+}
+.fig--dead .sil-eyes {
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------- table */
+.scene__table {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--table-h);
+  clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+  background:
+    linear-gradient(180deg, rgba(255, 190, 120, 0.3) 0, transparent 0.6cqh),
+    linear-gradient(180deg, #2b190e 0%, #1b0e07 55%, #0e0704 100%);
+}
+.scene__grainwood {
+  position: absolute;
+  inset: 0;
+  opacity: 0.85;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='300'%3E%3Cfilter id='w' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0035 0.085' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.34 0 0 0 0 0.19 0 0 0 0 0.09 1.9 0 0 0 -0.62'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E");
+  background-size: 900px 300px;
+}
+.scene__pool {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 46% 70% at 50% 8%, rgba(255, 196, 130, 0.36), rgba(255, 170, 96, 0.1) 52%, transparent 78%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.65), transparent 22%, transparent 78%, rgba(0, 0, 0, 0.65)),
+    linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.55));
+}
+.scene__edge {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2.2cqh;
+  background: linear-gradient(180deg, #3a2312, #120a05);
+  box-shadow: 0 -0.3cqh 0 rgba(255, 190, 120, 0.12);
+}
+
+/* ---------------------------------------------------------------- HUD plates (name, health, status, items) */
+.scene__plates {
+  pointer-events: none;
+}
+.scene__plate {
+  position: absolute;
+  top: 56px;
+  width: min(30cqw, 340px);
+  translate: -50% 0;
+  pointer-events: auto;
+}
+.scene__plate--left {
+  left: 27%;
+}
+.scene__plate--right {
+  left: 73%;
+}
+
+/* ---------------------------------------------------------------- light, grain, damage */
+.scene__vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 78% 74% at 50% 46%, transparent 38%, rgba(0, 0, 0, 0.74) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 20%, transparent 70%, rgba(0, 0, 0, 0.45));
+}
+.scene__filmgrain {
+  position: absolute;
+  inset: -64px;
+  opacity: 0.16;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+  animation: grain 0.9s steps(6) infinite;
+}
+@keyframes grain {
+  0% {
+    transform: translate(0, 0);
+  }
+  17% {
+    transform: translate(-26px, 14px);
+  }
+  34% {
+    transform: translate(18px, -30px);
+  }
+  50% {
+    transform: translate(-12px, -8px);
+  }
+  67% {
+    transform: translate(30px, 22px);
+  }
+  84% {
+    transform: translate(-20px, 28px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+.scene__hit {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 66% at 50% 50%, transparent 28%, rgba(176, 8, 8, 0.72) 100%),
+    rgba(120, 0, 0, 0.18);
+  animation: hitMe 0.85s ease-out forwards;
+}
+@keyframes hitMe {
+  0% {
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.scene__heartbeat {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 76% at 50% 50%, transparent 52%, rgba(150, 0, 0, 0.55) 100%);
+  animation: heartbeat 1.25s ease-in-out infinite;
+}
+@keyframes heartbeat {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  14% {
+    opacity: 0.5;
+  }
+  28% {
+    opacity: 0.14;
+  }
+  42% {
+    opacity: 0.4;
+  }
+}
+
+/* camera shake moves the world and the plates; the HUD stays readable */
+.scene.shake-a .scene__world,
+.scene.shake-a .scene__plates {
+  animation: sceneShakeA 0.42s linear;
+}
+.scene.shake-b .scene__world,
+.scene.shake-b .scene__plates {
+  animation: sceneShakeB 0.42s linear;
+}
+@keyframes sceneShakeA {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  14% {
+    translate: -1.2cqw 0.9cqh;
+  }
+  34% {
+    translate: 1cqw -0.8cqh;
+  }
+  56% {
+    translate: -0.7cqw 0.5cqh;
+  }
+  78% {
+    translate: 0.4cqw -0.3cqh;
+  }
+}
+@keyframes sceneShakeB {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  14% {
+    translate: -1.2cqw 0.9cqh;
+  }
+  34% {
+    translate: 1cqw -0.8cqh;
+  }
+  56% {
+    translate: -0.7cqw 0.5cqh;
+  }
+  78% {
+    translate: 0.4cqw -0.3cqh;
+  }
+}
+
+/* ---------------------------------------------------------------- portrait phones */
+@media (max-width: 699px), (orientation: portrait) {
+  .scene {
+    /* On a phone the HUD spans the full width, so the table starts just above it (height measured in GameScreen). */
+    --table-h: max(34cqh, calc(var(--hud-h, 40cqh) + 1cqh));
+    --fig-h: min(calc(100cqh - var(--table-h) - 13cqh), calc(50cqw / var(--aspect, 0.667)));
+  }
+  .fig--left {
+    left: 25%;
+  }
+  .fig--right {
+    left: 75%;
+  }
+  .scene__plate {
+    width: 47cqw;
+  }
+  .scene__plate--left {
+    left: 25%;
+  }
+  .scene__plate--right {
+    left: 75%;
+  }
+  .scene__dust i:nth-child(odd) {
+    display: none; /* fewer moving particles on phones */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene__filmgrain,
+  .scene__dust,
+  .scene__heartbeat {
+    animation: none;
+  }
+  .scene__dust {
+    display: none;
+  }
+}
+
+/* ======================================================================================
+   Game screen layout when the scene is behind it: bar / (figures) / tray / dock
+   ====================================================================================== */
+.game.game--scene {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  min-height: 100dvh;
+  overflow-x: clip;
+  background: #050405;
+}
+.game__bar,
+.game__mid,
+.game__hud {
+  position: relative;
+  z-index: 2;
+}
+.game--scene .game__bar {
+  padding: 8px max(12px, env(safe-area-inset-left));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent);
+}
+.game__mid {
+  flex: 1 1 auto;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.game--scene .turn {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(1rem, 3.2vw, 1.5rem);
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 18px rgba(0, 0, 0, 0.9);
+}
+.game--scene .game__mid .banner {
+  position: absolute;
+  inset: 0;
+}
+.game__hud {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 max(12px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.5) 22%, rgba(0, 0, 0, 0.62));
+}
+.game--scene .game__tray {
+  width: min(100%, 640px);
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.game--scene .counter {
+  min-width: 0;
+  padding: 2px 10px;
+  font-size: 0.86rem;
+  background: rgba(10, 7, 6, 0.8);
+}
+.game--scene .intel,
+.game--scene .message {
+  text-shadow: 0 1px 6px #000;
+}
+.game--scene .message {
+  min-height: 1.4em;
+}
+
+/* the opponents' plates: translucent, they sit on the dark wall above the figures */
+.game--scene .scene__plate .panel {
+  background: rgba(10, 7, 6, 0.74);
+  backdrop-filter: none;
+  padding: 7px 9px;
+  gap: 5px;
+}
+.game--scene .scene__plate .panel__name {
+  font-size: 1rem;
+}
+.game--scene .scene__plate .chip {
+  font-size: 0.62rem;
+  padding: 1px 5px;
+}
+.game--scene .scene__plate .stamp {
+  font-size: clamp(0.9rem, 2vw, 1.2rem);
+}
+@media (max-width: 699px), (orientation: portrait) {
+  .game--scene .game__tray {
+    gap: 1px;
+  }
+  .game--scene .counters {
+    gap: 5px;
+  }
+  .game--scene .counter {
+    font-size: 0.76rem;
+    padding: 1px 8px;
+  }
+  .game--scene .game__tray .shells {
+    padding-top: 13px;
+    gap: 4px;
+  }
+  .game--scene .game__tray .shell__tag {
+    top: -12px;
+    font-size: 0.55rem;
+  }
+  .game--scene .game__tray .shell__num {
+    font-size: 0.6rem;
+    margin-top: 0;
+  }
+  .game--scene .shells__legend {
+    display: none;
+  }
+  .game--scene .intel {
+    font-size: 0.78rem;
+    min-height: 1.1em;
+  }
+  .game--scene .message {
+    font-size: 0.92rem;
+    min-height: 1.2em;
+  }
+  .game--scene .inventory__title {
+    display: none;
+  }
+  .game--scene .slot {
+    min-height: 50px;
+  }
+  .game--scene .dock__me .panel {
+    padding: 4px 10px;
+  }
+  .game--scene .actions .btn--lg {
+    min-height: 50px;
+  }
+  .game--scene .game__hud {
+    gap: 4px;
+  }
+  .game--scene .game__tray .shell,
+  .game--scene .game__tray .shell__body {
+    width: 26px;
+  }
+  .game--scene .game__tray .shell__body {
+    height: 34px;
+  }
+  .game--scene .scene__plate .panel__status {
+    font-size: 0.66rem;
+  }
+}
+
+.game__mid:has(.banner) .turn {
+  opacity: 0;
+}
+.game--scene .turn {
+  transition: opacity 0.2s;
+}
+
+/* Dedicated pose images (aim-at-neighbour, aim-self, dead) already show the pose, so don't add the
+   silhouette tilt or the full slump on top of them. */
+.fig--posed.fig--aim-neighbor.fig--left {
+  rotate: 1.2deg;
+}
+.fig--posed.fig--aim-neighbor.fig--right {
+  rotate: -1.2deg;
+}
+.fig--posed.fig--dead {
+  filter: grayscale(0.6) brightness(0.5);
+  translate: -50% 6%;
+}
+.fig--posed.fig--dead.fig--left,
+.fig--posed.fig--dead.fig--right {
+  rotate: 0deg;
+}
+
+
+/* ---------------------------------------------------------------- 3D room (WebGL) */
+.scene3d {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%; /* full screen; the stage shifts the picture so the table sits above the HUD */
+  display: block;
+}
+
+/* In the 3D room the opponents' plates sit beside them (not above), so their heads stay visible. */
+@media (min-width: 700px) and (orientation: landscape) {
+  .scene--3d .scene__plate {
+    top: 84px;
+    width: min(24cqw, 300px);
+  }
+  .scene--3d .scene__plate--left {
+    left: 14%;
+  }
+  .scene--3d .scene__plate--right {
+    left: 86%;
+  }
+}

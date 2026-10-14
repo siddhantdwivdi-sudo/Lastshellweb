@@ -3,7 +3,7 @@
 
 import { ITEM_DEFS, type ItemId, type KnownShell, type PublicGameView, type RoomState } from "@lastshell/shared";
 import { opponentsOf, seatName } from "../lib/layout";
-import type { GameUiModel } from "../ui/model";
+import { NO_CUES, type GameUiModel } from "../ui/model";
 import { known, mkPlayer, mkView, uid } from "./builders";
 
 export interface MockFrame {
@@ -35,6 +35,7 @@ export function buildPlayScript(you: number, room: RoomState): MockFrame[] {
     aim: null,
     fx: null,
     reload: null,
+    cues: NO_CUES,
     ...extra,
   });
 
@@ -100,6 +101,7 @@ export function buildPlayScript(you: number, room: RoomState): MockFrame[] {
           banner: banner("LIVE", RED),
           message: msg(`${nm(you)} shoots ${nm(L)}: LIVE! -1 HP`, true),
           aim: { shooter: you, target: L, shotId: uid() },
+          cues: { ...NO_CUES, shot: { id: uid(), shooter: you, target: L, live: true, damage: 1, selfShot: false } },
           fx: { id: uid(), kind: "flash-live", shake: true },
         },
       ),
@@ -125,6 +127,7 @@ export function buildPlayScript(you: number, room: RoomState): MockFrame[] {
           banner: banner("BLANK", BLUE),
           message: msg(`${nm(L)} shoots ${nm(you)}: BLANK.`),
           aim: { shooter: L, target: you, shotId: uid() },
+          cues: { ...NO_CUES, shot: { id: uid(), shooter: L, target: you, live: false, damage: 0, selfShot: false } },
           fx: { id: uid(), kind: "flash-blank" },
         },
       ),
@@ -165,6 +168,7 @@ export function buildPlayScript(you: number, room: RoomState): MockFrame[] {
           banner: banner("LIVE", RED),
           message: msg(`${nm(R)} shoots ${nm(you)}: LIVE! -1 HP`, true),
           aim: { shooter: R, target: you, shotId: uid() },
+          cues: { ...NO_CUES, shot: { id: uid(), shooter: R, target: you, live: true, damage: 1, selfShot: false } },
           fx: { id: uid(), kind: "flash-live", shake: true },
         },
       ),
@@ -198,6 +202,7 @@ export function buildPlayScript(you: number, room: RoomState): MockFrame[] {
           banner: banner("LIVE", RED),
           message: msg(`${nm(you)} shoots ${nm(L)}: LIVE! -1 HP`, true),
           aim: { shooter: you, target: L, shotId: uid() },
+          cues: { ...NO_CUES, shot: { id: uid(), shooter: you, target: L, live: true, damage: 1, selfShot: false } },
           fx: { id: uid(), kind: "flash-live", shake: true },
         },
       ),
@@ -215,6 +220,7 @@ export function buildPlayScript(you: number, room: RoomState): MockFrame[] {
         [],
         {
           busy: true,
+          cues: { ...NO_CUES, elim: { id: uid(), seat: L } },
           banner: banner(`${nm(L)} OUT`, RED),
           message: msg(`${nm(L)} IS ELIMINATED`, true),
           fx: { id: uid(), kind: "flash-out", shake: true },
@@ -252,6 +258,7 @@ export function buildPlayScript(you: number, room: RoomState): MockFrame[] {
           banner: banner("LIVE", RED),
           message: msg(`${nm(you)} shoots ${nm(R)}: LIVE! -1 HP`, true),
           aim: { shooter: you, target: R, shotId: uid() },
+          cues: { ...NO_CUES, shot: { id: uid(), shooter: you, target: R, live: true, damage: 1, selfShot: false } },
           fx: { id: uid(), kind: "flash-live", shake: true },
         },
       ),

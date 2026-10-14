@@ -1,8 +1,7 @@
 import { ITEM_DEFS, PLAYER_COLORS, type ItemId, type KnownShell } from "@lastshell/shared";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { Backdrop } from "../components/Backdrop";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Btn } from "../components/bits";
-import { IDLE_AIM, aimAngle, opponentsOf, seatName } from "../lib/layout";
+import { opponentsOf, seatName } from "../lib/layout";
 import { useLayoutKind } from "../lib/hooks";
 import type { GameActions, GameUiModel, ItemArgs } from "../ui/model";
 import { ActionBar } from "./ActionBar";
@@ -12,7 +11,7 @@ import { ItemSheet } from "./ItemSheet";
 import { MenuOverlay, ReconnectOverlay, ReloadOverlay, WinnerOverlay } from "./Overlays";
 import { PlayerPanel } from "./PlayerPanel";
 import { ShellRow } from "./ShellRow";
-import { ShotgunView } from "./ShotgunView";
+import { SceneStage } from "../scene/SceneStage";
 
 interface Props {
   model: GameUiModel;
@@ -183,19 +182,45 @@ export function GameScreen({ model, actions, onRules }: Props) {
     }
   }
 
+  // The scene is drawn behind the HUD; tell it how tall the HUD is so the table starts right above it.
+  const gameRef = useRef<HTMLElement>(null);
+  const hudRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const hud = hudRef.current;
+    const game = gameRef.current;
+    if (!hud || !game) return;
+    const apply = () => game.style.setProperty("--hud-h", `${hud.offsetHeight}px`);
+    apply();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(apply);
+    ro.observe(hud);
+    return () => ro.disconnect();
+  }, []);
+
   // --- derived presentation
-  const aimTarget = model.aim ? aimAngle(model.aim.target, you, layout) : IDLE_AIM;
   const known = model.private.knownShells;
   const intel = useMemo(() => known.map(describeKnown), [known]);
   const turnColor = PLAYER_COLORS[view.current];
   const shownMessage = note ? { id: note.id, text: note.text, bad: true } : model.message;
   const selectedItem = selectedSlot !== null ? me.items[selectedSlot] : undefined;
   const hoverItem = hoverSlot !== null ? me.items[hoverSlot] : undefined;
-  const shakeClass = model.fx?.shake ? (model.fx.id % 2 ? " shake-a" : " shake-b") : "";
 
   return (
-    <main className={`screen game game--${layout}${shakeClass}`}>
-      <Backdrop />
+    <main className={`screen game game--scene game--${layout}`} ref={gameRef}>
+      <SceneStage
+        model={model}
+        renderPlate={(seat) => (
+          <PlayerPanel
+            player={view.players[seat]}
+            seatInfo={room.seats[seat]}
+            isTurn={view.current === seat}
+            isYou={false}
+            showItems
+            gameOver={over}
+            compact
+          />
+        )}
+      />
       {model.fx && (
         <div
           key={model.fx.id}
@@ -215,40 +240,19 @@ export function GameScreen({ model, actions, onRules }: Props) {
         </Btn>
       </header>
 
-      <section className="game__opp game__opp--left" aria-label="Opponent on the left">
-        <PlayerPanel
-          player={view.players[left]}
-          seatInfo={room.seats[left]}
-          isTurn={view.current === left}
-          isYou={false}
-          showItems
-          gameOver={over}
-        />
-      </section>
-
-      <section className="game__opp game__opp--right" aria-label="Opponent on the right">
-        <PlayerPanel
-          player={view.players[right]}
-          seatInfo={room.seats[right]}
-          isTurn={view.current === right}
-          isYou={false}
-          showItems
-          gameOver={over}
-        />
-      </section>
-
-      <section className="game__stage" aria-label="Table">
+      <section className="game__mid" aria-label="Table">
         <p className="turn" style={{ color: turnColor }} aria-live="polite">
-          {over ? " " : view.current === you ? "YOUR TURN" : `${seatName(view.current)}'S TURN`}
+          {over ? " " : view.current === you ? "YOUR TURN" : `${seatName(view.current)}'S TURN`}
         </p>
-        <div className="stage__gun">
-          <ShotgunView aim={aimTarget} shotId={model.aim?.shotId ?? null} sawed={view.players[view.current].sawed && view.players[view.current].alive} />
-          {model.banner && (
-            <div key={model.banner.id} className="banner" style={{ color: model.banner.color }} aria-hidden="true">
-              {model.banner.text}
-            </div>
-          )}
-        </div>
+        {model.banner && (
+          <div key={model.banner.id} className="banner" style={{ color: model.banner.color }} aria-hidden="true">
+            {model.banner.text}
+          </div>
+        )}
+      </section>
+
+      <div className="game__hud" ref={hudRef}>
+      <section className="game__tray" aria-label="Shotgun shells">
         <div className="counters" role="group" aria-label="Shells left">
           <span className="counter counter--live">LIVE: {view.magazine.live}</span>
           <span className="counter counter--blank">BLANK: {view.magazine.blank}</span>
@@ -256,10 +260,10 @@ export function GameScreen({ model, actions, onRules }: Props) {
         </div>
         <ShellRow fired={view.fired} total={view.magazine.total} known={over ? [] : known} />
         <p className="intel" aria-live="polite">
-          {intel.length > 0 && !over ? <>YOUR INTEL ONLY &gt; {intel.join("   |   ")}</> : " "}
+          {intel.length > 0 && !over ? <>YOUR INTEL ONLY &gt; {intel.join("   |   ")}</> : " "}
         </p>
         <p key={shownMessage?.id} className={`message${shownMessage?.bad ? " is-bad" : ""}${shownMessage ? " has-text" : ""}`} aria-live="polite" role="status">
-          {shownMessage?.text ?? " "}
+          {shownMessage?.text ?? " "}
         </p>
       </section>
 
@@ -284,6 +288,8 @@ export function GameScreen({ model, actions, onRules }: Props) {
           </p>
         </div>
       </section>
+
+      </div>
 
       {model.reload && <ReloadOverlay reload={model.reload} />}
       {model.reconnecting && <ReconnectOverlay />}

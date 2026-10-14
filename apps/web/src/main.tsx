@@ -7,6 +7,7 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/screens.css";
 import "./styles/game.css";
+import "./styles/scene.css";
 import "./styles/overlays.css";
 
 createRoot(document.getElementById("root")!).render(

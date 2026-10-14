@@ -1,4 +1,4 @@
-import { S2C } from "@lastshell/shared";
+import { EVENT_DURATION_MS, S2C } from "@lastshell/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeState } from "./helpers";
 import { makeMatch, newManager, send, type Lobby } from "./room-helpers";
@@ -101,7 +101,7 @@ describe("pacing (BUSY)", () => {
     expect(early).toMatchObject({ ok: false, code: "BUSY" });
     expect(lobby.room.game!.players[2].hp).toBe(3);
 
-    vi.advanceTimersByTime(2100); // shotFired 900 + shotResolved 1200
+    vi.advanceTimersByTime(EVENT_DURATION_MS.shotFired + EVENT_DURATION_MS.shotResolved);
     expect(lobby.room.busy).toBe(false);
     expect(lobby.peers[1].last(S2C.idle)).toEqual({ version: 2 });
     expect(send(lobby, lobby.peers[1], { type: "shoot", target: 2 })).toMatchObject({ ok: true });

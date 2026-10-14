@@ -1,4 +1,4 @@
-import { DISCONNECT_GRACE_MS, S2C } from "@lastshell/shared";
+import { DISCONNECT_GRACE_MS, EVENT_DURATION_MS, S2C } from "@lastshell/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeState, obs } from "./helpers";
 import { makeMatch, newManager, newPeer, send, type Lobby } from "./room-helpers";
@@ -54,10 +54,11 @@ describe("disconnect grace period", () => {
     setup({ busyScale: 1, graceMs: 1000 });
     vi.advanceTimersByTime(3000); // opening deal
     lobby.manager.onDisconnect(lobby.peers[2]);
-    expect(send(lobby, lobby.peers[0], { type: "shoot", target: 1 })).toMatchObject({ ok: true }); // busy ~2.1s
+    expect(send(lobby, lobby.peers[0], { type: "shoot", target: 1 })).toMatchObject({ ok: true }); // busy for the whole shot animation
+    const shotMs = EVENT_DURATION_MS.shotFired + EVENT_DURATION_MS.shotResolved;
     vi.advanceTimersByTime(1500); // grace (1s) is over, but the table is busy
     expect(lobby.room.game!.players[2].alive).toBe(true);
-    vi.advanceTimersByTime(700);
+    vi.advanceTimersByTime(shotMs - 1500 + 100);
     expect(lobby.room.game!.players[2].alive).toBe(false);
   });
 
