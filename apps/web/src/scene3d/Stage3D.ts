@@ -15,9 +15,9 @@ import gunSideUrl from "../assets/props/shotgun-side.png";
 export const PLAYER_HEX = [0xffa838, 0x66d1eb, 0xd185f2];
 const HAIR = [0x1a120d, 0x8c6633, 0x0d0d0f];
 const SKIN = [0xd9a684, 0x9e6e52, 0xedc2a3];
-const REST_CAM = new THREE.Vector3(0, 1.9, 2.45);
-const REST_LOOK = new THREE.Vector3(0, 1.2, -0.4);
-const REST_FOV = 52;
+const REST_CAM = new THREE.Vector3(0, 2.45, 3.55);
+const REST_LOOK = new THREE.Vector3(0, 1.1, -0.3);
+const REST_FOV = 50;
 /** You sit at the near rim (your body is not drawn, only your arms); the two photographed men sit on the far rim. */
 const VIEWER_POS = new THREE.Vector3(0, 0, 1.3);
 const MEN_POS = [new THREE.Vector3(), new THREE.Vector3(-0.92, TABLE_Y, -0.36), new THREE.Vector3(0.92, TABLE_Y, -0.36)];
@@ -107,10 +107,10 @@ export class Stage3D {
     this.buildRoom();
     this.buildTable();
     this.buildGun();
-    this.viewer = new Person(this.scene, 0, 0x4a4038, HAIR[0], SKIN[0], true);
+    this.viewer = new Person(this.scene, 0, 0x2e2826, 0x0b0b0d, 0x4a392e, true);
     this.viewer.root.position.copy(VIEWER_POS);
     this.viewer.root.rotation.y = Math.PI;
-    this.viewer.setFirstPerson(true);
+    this.viewer.silhouette(0x0d0b0a);
     this.scene.add(this.viewer.root);
 
     preloadMen();
@@ -119,6 +119,8 @@ export class Stage3D {
       const m = new PhotoMan(idx);
       m.root.position.copy(MEN_POS[idx]);
       m.root.rotation.y = yawToCam(MEN_POS[idx]);
+      m.mirror = idx === 2;
+      m.show("rest");
       this.scene.add(m.root);
       this.men[idx] = m;
     }
@@ -461,7 +463,7 @@ export class Stage3D {
     for (const f of this.fists) f.visible = false;
     this.viewer.resetPose();
     this.viewer.lookTarget.set(0, 1, 0);
-    this.viewer.setLimbsVisible(false);
+    this.viewer.setLimbsVisible(true);
     for (const m of this.men) {
       if (!m) continue;
       m.dead = false;
@@ -489,6 +491,7 @@ export class Stage3D {
       const idx = this.slot(seat);
       if (idx === 0) {
         if (!alive[seat] && !this.viewer.dead) this.slumpYou();
+        else if (alive[seat] && hp[seat] > 0 && this.viewer.dead) this.viewer.resetPose();
         continue;
       }
       const m = this.men[idx]!;
@@ -505,10 +508,13 @@ export class Stage3D {
   }
 
   private slumpYou(): void {
-    this.viewer.dead = true;
-    this.camPos.set(0, 1.12, 1.35);
-    this.camLook.set(0, 0.7, -0.3);
-    this.viewer.setLimbsVisible(false);
+    const v = this.viewer;
+    v.dead = true;
+    v.mode = "dead";
+    v.lookOn = false;
+    v.lean = 1.15;
+    v.headPitch = 0.55;
+    v.headYaw = 0.35;
   }
 
   /** Adds camera shake (0.1 is a solid jolt). */
@@ -581,7 +587,6 @@ export class Stage3D {
     s.showHands = [false, false];
     this.fistMat.color.setHex(s.skinHex);
     for (const x of this.fists) x.visible = true;
-    s.setLimbsVisible(true);
     await this.tweens.prop(s, "lean", 0.42, 0.45 * f, ease.out);
 
     s.hand_speed = 34;
@@ -618,9 +623,10 @@ export class Stage3D {
     const seat = m.seatWorld();
     const hand = new THREE.Vector3(seat.x, GUN_REST_Y, seat.z + 0.32);
     void this.tweens.prop(m.offset, "z", 0.05, 0.4 * f, ease.out);
+    const lift = m.play(pose, flip, 0.75 * f, this.tweens); // real in-between frames: he reaches, grabs and raises it
     await this.moveGun(hand, this.gun.quaternion.clone(), 0.4 * f, 0.03);
-    await m.fadeTo(pose, flip, 0.2 * f, this.tweens); // he is holding it now
-    this.gun.visible = false;
+    this.gun.visible = false; // it is in his hands in the picture now
+    await lift;
 
     // where the shot will go
     const muzzle = m.muzzleWorld();
@@ -709,31 +715,26 @@ export class Stage3D {
       this.gun.updateMatrixWorld(true);
       this.spawnShell(live, this.gunModel.localToWorld(new THREE.Vector3(0.04, 0.03, -0.02)), this.gun.quaternion);
       await this.tweens.run(0.16, (k) => (this.pump.position.z = PUMP_Z + 0.16 - 0.16 * k), ease.linear);
-      if (!this.viewer.dead) {
-        void this.blend(this.camPos, this.restCam, 1.0);
-        void this.blend(this.camLook, REST_LOOK, 1.0);
-        void this.tweens.prop(this, "fov", REST_FOV, 1.0);
-      }
+      void this.blend(this.camPos, this.restCam, 1.0);
+      void this.blend(this.camLook, REST_LOOK, 1.0);
+      void this.tweens.prop(this, "fov", REST_FOV, 1.0);
       await this.moveGun(rest.pos, rest.quat, 0.7, 0.2);
       this.holder = -1;
       for (const x of this.fists) x.visible = false;
       this.viewer.showHands = [true, true];
-      this.viewer.mode = "idle";
-      this.viewer.setLimbsVisible(false);
+      this.viewer.mode = this.viewer.dead ? "dead" : "idle";
       void this.tweens.prop(this.viewer, "twist", 0, 0.6);
       void this.tweens.prop(this.viewer, "lean", 0, 0.6);
     } else {
       const m = this.men[sh.sIdx]!;
       // he puts the gun back and sits back; a spent shell is flung out
-      if (!this.viewer.dead) {
-        void this.blend(this.camPos, this.restCam, 1.0);
-        void this.blend(this.camLook, REST_LOOK, 1.0);
-        void this.tweens.prop(this, "fov", REST_FOV, 1.0);
-      }
+      void this.blend(this.camPos, this.restCam, 1.0);
+      void this.blend(this.camLook, REST_LOOK, 1.0);
+      void this.tweens.prop(this, "fov", REST_FOV, 1.0);
       const handPos = m.seatWorld().add(new THREE.Vector3(0, 0.1, 0.3));
       this.spawnShell(live, m.torsoWorld().add(new THREE.Vector3(0, 0.1, 0.2)), new THREE.Quaternion());
       void this.tweens.prop(m.offset, "z", 0, 0.5);
-      if (!m.dead) void m.fadeTo("rest", false, 0.3, this.tweens);
+      if (!m.dead) void m.play("rest", false, 0.6, this.tweens);
       this.gun.position.copy(handPos);
       this.gun.quaternion.copy(rest.quat);
       this.gun.visible = true;
@@ -747,10 +748,10 @@ export class Stage3D {
   private async hitReaction(t: PhotoMan): Promise<void> {
     void this.tweens.prop(t, "fear", 1, 0.1);
     void this.tweens.run(0.5, (k) => (t.offset.z = -0.07 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5) * (1 - k * 0.6)), ease.linear);
-    await t.fadeTo("hit", false, 0.08, this.tweens);
-    await this.tweens.wait(1.3);
+    await t.play("hit", false, 0.3, this.tweens);
+    await this.tweens.wait(1.1);
     if (t.dead) return;
-    await t.fadeTo("rest", false, 0.35, this.tweens);
+    await t.play("rest", false, 0.5, this.tweens);
     void this.tweens.prop(t, "fear", 0, 0.8);
     t.offset.z = 0;
   }
@@ -761,25 +762,29 @@ export class Stage3D {
     void this.tweens.prop(t, "fear", 0, 0.1);
     void this.tweens.run(0.25, (k) => (t.offset.x = dir.x * 0.06 * Math.sin(k * Math.PI * 0.5)), ease.linear);
     void this.tweens.prop(t, "roll", dir.x > 0 ? -0.06 : 0.06, 0.2);
-    await t.fadeTo("dead", false, 0.12, this.tweens);
-    await this.tweens.wait(0.5);
+    if (t.pose !== "hit") await t.play("hit", false, 0.22, this.tweens);
+    await t.play("dead", false, 0.7, this.tweens);
+    await this.tweens.wait(0.2);
     void this.tweens.prop(t.offset, "x", 0, 0.5);
     void this.tweens.prop(t, "roll", 0, 0.5);
     void this.tweens.prop(t.offset, "z", 0.04, 0.5);
     await this.tweens.wait(0.5);
   }
 
-  /** Your own head: the camera snaps back, then slumps onto the table. */
+  /** You are hit in the head: you jerk back, then slump forward over the table. */
   private async youDie(): Promise<void> {
-    this.viewer.dead = true;
-    this.jolt(0.16);
-    this.viewer.setLimbsVisible(false);
-    void this.blend(this.camPos, new THREE.Vector3(0, 2.25, 3.3), 0.14);
-    await this.tweens.wait(0.5);
-    void this.blend(this.camPos, new THREE.Vector3(0, 1.12, 1.35), 1.0, ease.in);
-    void this.blend(this.camLook, new THREE.Vector3(0, 0.7, -0.3), 1.0);
-    void this.tweens.prop(this, "fov", REST_FOV, 1.0);
-    await this.tweens.wait(1.0);
+    const v = this.viewer;
+    v.dead = true;
+    v.lookOn = false;
+    v.mode = "dead";
+    this.jolt(0.14);
+    void this.tweens.prop(v, "headPitch", -0.85, 0.12);
+    void this.tweens.prop(v, "lean", -0.4, 0.14);
+    await this.tweens.wait(0.55);
+    void this.tweens.prop(v, "lean", 1.15, 1.0, ease.in);
+    void this.tweens.prop(v, "headPitch", 0.55, 1.0);
+    void this.tweens.prop(v, "headYaw", 0.35, 1.0);
+    await this.tweens.wait(1.05);
   }
 
   // ================================================================== effects

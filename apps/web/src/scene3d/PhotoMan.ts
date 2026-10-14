@@ -35,8 +35,46 @@ function fileFor(pose: PhotoPose): PhotoPose | "left" {
   return pose === "aim" ? "left" : pose;
 }
 
+/** Motion strips (6 in-between frames side by side) that exist, by "from>to" in file names. */
+const SEQ_FRAMES = 6;
+const SEQS = new Set(["rest>forward", "rest>left", "rest>chin", "rest>hit", "forward>hit", "left>hit", "chin>hit", "hit>dead", "hit>rest"]);
+const strips = new Map<string, THREE.Texture>();
+const frameCache = new Map<string, THREE.Texture>();
+
+function stripFor(man: number, a: string, b: string): THREE.Texture | null {
+  if (!SEQS.has(`${a}>${b}`)) return null;
+  const key = `s${man}-${a}-${b}`;
+  let t = strips.get(key);
+  if (!t) {
+    t = new THREE.TextureLoader().load(FILES[`../assets/men/${key}.webp`]);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    strips.set(key, t);
+  }
+  return t;
+}
+
+/** One frame of a strip, as its own texture (they share the image, only the UV window differs). */
+function stripFrame(man: number, a: string, b: string, i: number): THREE.Texture | null {
+  const base = stripFor(man, a, b);
+  if (!base) return null;
+  const key = `s${man}-${a}-${b}-${i}`;
+  let t = frameCache.get(key);
+  if (!t) {
+    t = base.clone();
+    t.repeat.set(1 / SEQ_FRAMES, 1);
+    t.offset.set(i / SEQ_FRAMES, 0);
+    t.needsUpdate = true;
+    frameCache.set(key, t);
+  }
+  return t;
+}
+
 export function preloadMen(): void {
-  for (let m = 0; m < 3; m++) for (const p of ["rest", "forward", "aim", "chin", "hit", "dead"] as PhotoPose[]) texFor(m, p);
+  for (let m = 0; m < 3; m++) {
+    for (const p of ["rest", "forward", "aim", "chin", "hit", "dead"] as PhotoPose[]) texFor(m, p);
+    for (const k of SEQS) stripFor(m, k.split(">")[0], k.split(">")[1]);
+  }
 }
 
 function texFor(man: number, pose: PhotoPose): THREE.Texture {
@@ -59,6 +97,8 @@ export class PhotoMan {
   man = 0;
   pose: PhotoPose = "rest";
   flip = false;
+  /** The right-hand man is always drawn mirrored, so he aims toward the left of the picture. */
+  mirror = false;
   dead = false;
   /** Offsets the stage tweens (metres) and a small roll (radians). */
   offset = new THREE.Vector3();
@@ -105,7 +145,8 @@ export class PhotoMan {
   }
 
   /** Immediately shows a pose. */
-  show(pose: PhotoPose, flip = false): void {
+  show(pose: PhotoPose, _flip = false): void {
+    const flip = this.mirror;
     this.pose = pose;
     this.flip = flip;
     this.matA.map = texFor(this.man, pose);
@@ -116,7 +157,8 @@ export class PhotoMan {
   }
 
   /** Cross-fades to another pose. */
-  fadeTo(pose: PhotoPose, flip: boolean, dur: number, tweens: Tweens): Promise<void> {
+  fadeTo(pose: PhotoPose, _flip: boolean, dur: number, tweens: Tweens): Promise<void> {
+    const flip = this.mirror;
     if (pose === this.pose && flip === this.flip) return Promise.resolve();
     this.pose = pose;
     this.flip = flip;
@@ -133,6 +175,73 @@ export class PhotoMan {
         this.matA.needsUpdate = true;
         this.a.scale.x = this.b.scale.x;
         this.matA.opacity = 1;
+        this.b.visible = false;
+        this.fading = false;
+      });
+  }
+
+  /** Poses (as picture file names) that a motion strip can go between; 'aim' is drawn from the 'left' pictures. */
+  hasMotion(to: PhotoPose): boolean {
+    const a = fileFor(this.pose);
+    const b = fileFor(to);
+    return SEQS.has(`${a}>${b}`) || SEQS.has(`${b}>${a}`);
+  }
+
+  /**
+   * Plays real in-between frames from the current pose to another (or backwards along a strip that goes the
+   * other way). Falls back to a cross-fade when there is no strip for that pair.
+   */
+  play(to: PhotoPose, _flip: boolean, dur: number, tweens: Tweens): Promise<void> {
+    const flip = this.mirror;
+    const from = this.pose;
+    const a = fileFor(from);
+    const b = fileFor(to);
+    let list: THREE.Texture[] | null = null;
+    const fwd = SEQS.has(`${a}>${b}`);
+    const back = SEQS.has(`${b}>${a}`);
+    if (fwd || back) {
+      const mid: THREE.Texture[] = [];
+      for (let i = 0; i < SEQ_FRAMES; i++) {
+        const t = fwd ? stripFrame(this.man, a, b, i) : stripFrame(this.man, b, a, SEQ_FRAMES - 1 - i);
+        if (t) mid.push(t);
+      }
+      if (mid.length === SEQ_FRAMES) list = [texFor(this.man, from), ...mid, texFor(this.man, to)];
+    }
+    if (!list) return this.fadeTo(to, flip, Math.min(dur, 0.25), tweens);
+
+    this.pose = to;
+    const startFlip = this.flip;
+    this.flip = flip;
+    const n = list.length - 1;
+    this.b.visible = true;
+    this.fading = true;
+    let shown = -1;
+    return tweens
+      .run(
+        dur,
+        (k) => {
+          const p = k * n;
+          const i = Math.min(n - 1, Math.floor(p));
+          const frac = p - i;
+          if (i !== shown) {
+            shown = i;
+            this.matA.map = list![i];
+            this.matB.map = list![i + 1];
+            this.matA.needsUpdate = true;
+            this.matB.needsUpdate = true;
+            this.a.scale.x = startFlip ? -1 : 1;
+            this.b.scale.x = flip ? -1 : 1;
+          }
+          this.matA.opacity = 1;
+          this.matB.opacity = frac;
+        },
+        (t) => t,
+      )
+      .then(() => {
+        this.matA.map = list![n];
+        this.matA.needsUpdate = true;
+        this.matA.opacity = 1;
+        this.a.scale.x = flip ? -1 : 1;
         this.b.visible = false;
         this.fading = false;
       });

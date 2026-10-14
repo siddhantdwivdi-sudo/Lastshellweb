@@ -98,7 +98,7 @@ export class Person {
   constructor(world: THREE.Object3D, id: number, shirt: number, hair: number, skinTone: number, longSleeves = false) {
     this.id = id;
     this.skinHex = skinTone;
-    const wood = mat(0x2a1a11, 0.6);
+    const wood = mat(longSleeves ? 0x0f0907 : 0x2a1a11, 0.6);
     const pants = mat(0x1a1a21, 0.9);
     const shirtM = mat(new THREE.Color(shirt).multiplyScalar(0.55).getHex(), 0.9);
     const skin = mat(skinTone, 0.7);
@@ -151,6 +151,15 @@ export class Person {
       const hand = ball(world, 0.07, 0, 0, 0, skin);
       this.limbs.push({ up, low, elbow, hand });
     }
+  }
+
+  /** Paints the whole seated body (chair, legs, torso, head) one flat dark colour: a silhouette against the lamp. */
+  silhouette(hex: number): void {
+    const m = mat(hex, 1);
+    this.body.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) mesh.material = m;
+    });
   }
 
   setFirstPerson(on: boolean): void {
