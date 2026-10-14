@@ -111,3 +111,16 @@ Keep this table up to date. Do not ship an image without a row.
 | File | Source (tool / artist / URL) | Date | Licence / terms (link) | Commercial use OK? |
 |---|---|---|---|---|
 | *(none yet; interim silhouettes are original vector art made for this project)* | | | | |
+
+## The photographed men in the 3D room (current)
+
+The 3D room (`apps/web/src/scene3d/`) draws the two opponents from photographs, one cut-out per pose, in
+`apps/web/src/assets/men/m{0,1,2}-{rest,forward,left,chin,hit,dead}.webp` (man 0 = the curly-haired bearded man,
+1 = the bald man, 2 = the man with the cigar; a man is always the same seat). They were cut out of the supplied
+pose sheets with a background-remover and aligned on one canvas per man (308 px wide, ~290 px high).
+
+- `rest` is cropped from the first (seated, hands down) sheet; `forward` = gun pointed at the viewer; `left` = gun pointed
+  sideways (the right-hand man's image is mirrored in code); `chin` = barrel under the chin; `hit`; `dead`.
+- Muzzle positions and head/table lines are measured in pixels in `scene3d/PhotoMan.ts` (`MEN`).
+- The images are only ~250 px wide, so they look soft on large screens. Sharper replacements can be dropped in
+  at the same names and canvas proportions; update `MEN` if the pixel measurements change.

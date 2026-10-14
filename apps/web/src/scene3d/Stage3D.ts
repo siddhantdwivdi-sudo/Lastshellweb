@@ -8,25 +8,24 @@
 
 import * as THREE from "three";
 import { box, cyl, glow, lookQuat, mat, Person, TABLE_Y } from "./Person3D";
+import { PhotoMan, preloadMen, type PhotoPose } from "./PhotoMan";
 import { Tweens, ease } from "./tween";
 import gunSideUrl from "../assets/props/shotgun-side.png";
 
 export const PLAYER_HEX = [0xffa838, 0x66d1eb, 0xd185f2];
 const HAIR = [0x1a120d, 0x8c6633, 0x0d0d0f];
 const SKIN = [0xd9a684, 0x9e6e52, 0xedc2a3];
-const SEAT_R = 1.3;
-const SLOT_DIRS = [new THREE.Vector3(0, 0, 1), new THREE.Vector3(-0.866, 0, -0.5), new THREE.Vector3(0.866, 0, -0.5)];
-const REST_CAM = new THREE.Vector3(0, 3.0, 4.05);
-const REST_LOOK = new THREE.Vector3(0, 0.9, -0.2);
-const REST_FOV = 50;
+const REST_CAM = new THREE.Vector3(0, 1.9, 2.45);
+const REST_LOOK = new THREE.Vector3(0, 1.2, -0.4);
+const REST_FOV = 52;
+/** You sit at the near rim (your body is not drawn, only your arms); the two photographed men sit on the far rim. */
+const VIEWER_POS = new THREE.Vector3(0, 0, 1.3);
+const MEN_POS = [new THREE.Vector3(), new THREE.Vector3(-0.92, TABLE_Y, -0.36), new THREE.Vector3(0.92, TABLE_Y, -0.36)];
 const GUN_REST_Y = 0.99;
 const MUZZLE = new THREE.Vector3(0, 0.03, -0.62);
 /** Resting position of the forend (the part the left hand holds) in gun space. */
 const PUMP_Z = -0.305;
 const PUMP_Y = -0.016;
-
-/** How long each server event is held on screen (see EVENT_DURATION_MS in the shared package). */
-export const SHOT_FIRED_SECONDS = 2.4;
 
 interface Puff {
   mesh: THREE.Mesh;
@@ -47,13 +46,13 @@ interface ShellObj {
 }
 
 interface ActiveShot {
-  s: Person;
-  t: Person;
   sIdx: number;
   tIdx: number;
   self: boolean;
-  aimDir: THREE.Vector3;
-  targetHead: THREE.Vector3;
+  /** Direction the shot travels. */
+  dir: THREE.Vector3;
+  /** The victim's head (where a lethal shot lands). */
+  hitHead: THREE.Vector3;
 }
 
 export class Stage3D {
@@ -61,15 +60,17 @@ export class Stage3D {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(REST_FOV, 16 / 9, 0.05, 40);
   private readonly tweens = new Tweens();
-  private readonly people: Person[] = [];
+  private readonly viewer: Person;
+  /** Photographed opponents by slot (index 0 is you, so it is empty). */
+  private readonly men: (PhotoMan | null)[] = [null, null, null];
   private readonly gun = new THREE.Group();
   private readonly gunModel = new THREE.Group();
   private readonly pump = new THREE.Group();
   private readonly barrelMat = mat(0x8a8d94, 0.28, 0.85);
-  private readonly flashMesh = new THREE.Group();
+  private readonly flash = new THREE.Group();
+  private flashGlow!: THREE.Sprite;
   private readonly fistMat = mat(0xd9a684, 0.7);
   private readonly flashLight = new THREE.PointLight(0xffbf66, 0, 6, 2);
-  private readonly turnLight = new THREE.PointLight(0xffffff, 5, 3, 2);
   private readonly dust: THREE.Points;
   private readonly puffs: Puff[] = [];
   private readonly shells: ShellObj[] = [];
@@ -106,18 +107,25 @@ export class Stage3D {
     this.buildRoom();
     this.buildTable();
     this.buildGun();
-    for (let i = 0; i < 3; i++) {
-      const p = new Person(this.scene, i, PLAYER_HEX[i], HAIR[i], SKIN[i]);
-      p.root.position.copy(SLOT_DIRS[i]).multiplyScalar(SEAT_R);
-      p.root.rotation.y = Math.atan2(-SLOT_DIRS[i].x, -SLOT_DIRS[i].z);
-      this.scene.add(p.root);
-      this.people.push(p);
+    this.viewer = new Person(this.scene, 0, 0x4a4038, HAIR[0], SKIN[0], true);
+    this.viewer.root.position.copy(VIEWER_POS);
+    this.viewer.root.rotation.y = Math.PI;
+    this.viewer.setFirstPerson(true);
+    this.scene.add(this.viewer.root);
+
+    preloadMen();
+    const yawToCam = (p: THREE.Vector3) => Math.atan2(REST_CAM.x - p.x, REST_CAM.z - p.z);
+    for (const idx of [1, 2]) {
+      const m = new PhotoMan(idx);
+      m.root.position.copy(MEN_POS[idx]);
+      m.root.rotation.y = yawToCam(MEN_POS[idx]);
+      this.scene.add(m.root);
+      this.men[idx] = m;
     }
 
     this.buildFlash();
-    this.flashLight.position.copy(MUZZLE).add(new THREE.Vector3(0, 0, -0.2));
-    this.gunModel.add(this.flashLight);
-    this.scene.add(this.turnLight);
+    this.flashLight.position.set(0, 0, -0.2);
+    this.flash.add(this.flashLight);
 
     const n = 70;
     const pos = new Float32Array(n * 3);
@@ -187,12 +195,13 @@ export class Stage3D {
       this.gun.position.set(this.holdPos.x + sway, this.holdPos.y + Math.sin(this.clock * 2.3) * 0.002, this.holdPos.z);
     }
     this.gun.updateMatrixWorld(true);
-    if (this.holder >= 0) {
-      const p = this.people[this.holder];
+    if (this.holder === 0) {
+      const p = this.viewer;
       p.goal[0].copy(this.gunModel.localToWorld(new THREE.Vector3(0.062, -0.048, 0.125))); // right wrist, behind the grip
       p.goal[1].copy(this.pump.localToWorld(new THREE.Vector3(-0.07, -0.085, 0.075))); // left wrist, under the forend
     }
-    for (const p of this.people) p.animate(sdt);
+    this.viewer.animate(sdt);
+    for (const m of this.men) m?.update(sdt);
     this.updatePuffs(sdt);
     this.updateShells(sdt);
 
@@ -347,11 +356,24 @@ export class Stage3D {
       const card = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.2), m);
       card.rotation.set(0, Math.PI / 2, (i * Math.PI) / 3);
       card.position.set(0, 0, -0.37);
-      this.flashMesh.add(card);
+      this.flash.add(card);
     }
-    this.flashMesh.position.copy(MUZZLE);
-    this.flashMesh.visible = false;
-    this.gunModel.add(this.flashMesh);
+    const sc = document.createElement("canvas");
+    sc.width = sc.height = 128;
+    const sg = sc.getContext("2d")!;
+    const rg = sg.createRadialGradient(64, 64, 0, 64, 64, 64);
+    rg.addColorStop(0, "rgba(255,250,220,1)");
+    rg.addColorStop(0.35, "rgba(255,190,90,0.7)");
+    rg.addColorStop(1, "rgba(255,90,0,0)");
+    sg.fillStyle = rg;
+    sg.fillRect(0, 0, 128, 128);
+    const st = new THREE.CanvasTexture(sc);
+    st.colorSpace = THREE.SRGBColorSpace;
+    this.flashGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: st, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.flashGlow.scale.set(0.5, 0.5, 1);
+    this.flash.add(this.flashGlow);
+    this.flash.visible = false;
+    this.scene.add(this.flash);
   }
 
   // ================================================================== helpers
@@ -360,9 +382,13 @@ export class Stage3D {
     return this.slotOfSeat[seat] ?? 0;
   }
 
-  /** World position of a person's head; for the local player that is the camera. */
+  /** Head position of whoever sits in a slot (for you: where your own head is, just below the camera). */
   private headOf(idx: number): THREE.Vector3 {
-    return this.people[idx].headWorld();
+    return idx === 0 ? this.viewer.headWorld() : this.men[idx]!.headWorld();
+  }
+
+  private torsoOf(idx: number): THREE.Vector3 {
+    return idx === 0 ? this.viewer.headWorld().add(new THREE.Vector3(0, -0.3, 0)) : this.men[idx]!.torsoWorld();
   }
 
   private restXform(yaw: number): { pos: THREE.Vector3; quat: THREE.Quaternion } {
@@ -403,6 +429,11 @@ export class Stage3D {
     return Math.max(-1.2, Math.min(1.2, Math.atan2(l.x, l.z)));
   }
 
+  private blend(v: THREE.Vector3, to: THREE.Vector3, dur: number, e = ease.inOut): Promise<void> {
+    const from = v.clone();
+    return this.tweens.run(dur, (k) => v.lerpVectors(from, to, k), e);
+  }
+
   // ================================================================== public API
 
   /** Back to a fresh table (new match / first sync). */
@@ -419,17 +450,24 @@ export class Stage3D {
     this.camLook.copy(REST_LOOK);
     this.fov = REST_FOV;
     const r = this.restXform(0.5);
+    this.gun.visible = true;
     this.gun.position.copy(r.pos);
     this.gun.quaternion.copy(r.quat);
     this.gunModel.position.set(0, 0, 0);
     this.gunModel.rotation.set(0, 0, 0);
     this.pump.position.set(0, PUMP_Y, PUMP_Z);
-    this.flashMesh.visible = false;
+    this.flash.visible = false;
     this.flashLight.intensity = 0;
     for (const f of this.fists) f.visible = false;
-    for (const p of this.people) {
-      p.resetPose();
-      p.lookTarget.set(0, 1, 0);
+    this.viewer.resetPose();
+    this.viewer.lookTarget.set(0, 1, 0);
+    this.viewer.setLimbsVisible(false);
+    for (const m of this.men) {
+      if (!m) continue;
+      m.dead = false;
+      m.offset.set(0, 0, 0);
+      m.roll = m.squash = m.fear = 0;
+      m.show("rest");
     }
   }
 
@@ -438,37 +476,44 @@ export class Stage3D {
     const out = [0, 0, 0];
     for (let seat = 0; seat < 3; seat++) out[seat] = seat === you ? 0 : seat === (you + 1) % 3 ? 1 : 2;
     this.slotOfSeat = out;
-    // opponents wear their seat's colour
-    // (people were created per slot; colours follow the slot order, which is stable for a viewer)
+    // each opponent is always the same man (his seat number picks the photographs)
+    for (let seat = 0; seat < 3; seat++) {
+      const m = this.men[out[seat]];
+      if (m && m.man !== seat) m.setMan(seat);
+    }
   }
 
-  /** Follows the public game state (who is alive, whose turn, the saw). Never starts an animation. */
+  /** Follows the public game state (who is alive, whose turn it is, the saw). Never starts an animation. */
   sync(alive: boolean[], hp: number[], current: number, awaiting: boolean, sawed: boolean): void {
     for (let seat = 0; seat < 3; seat++) {
       const idx = this.slot(seat);
-      const p = this.people[idx];
-      if (!alive[seat] && !p.dead) this.slumpNow(idx);
-      else if (alive[seat] && hp[seat] > 0 && p.dead) p.resetPose();
-    }
-    const cur = this.slot(current);
-    const show = awaiting && alive[current];
-    this.turnLight.visible = show;
-    if (show) {
-      this.turnLight.color.setHex(PLAYER_HEX[cur]);
-      this.turnLight.position.copy(this.people[cur].root.position).add(new THREE.Vector3(0, 2.0, 0)).addScaledVector(SLOT_DIRS[cur], -0.15);
+      if (idx === 0) {
+        if (!alive[seat] && !this.viewer.dead) this.slumpYou();
+        continue;
+      }
+      const m = this.men[idx]!;
+      if (!alive[seat] && !m.dead) {
+        m.dead = true;
+        m.show("dead");
+      } else if (alive[seat] && hp[seat] > 0 && m.dead) {
+        m.dead = false;
+        m.show("rest");
+      }
+      m.tint = awaiting && current === seat && alive[seat] ? 1.0 : 0.78;
     }
     this.barrelMat.emissiveIntensity = sawed ? 1.2 : 0;
   }
 
-  private slumpNow(idx: number): void {
-    const p = this.people[idx];
-    p.dead = true;
-    p.mode = "dead";
-    p.lookOn = false;
-    p.lean = 1.15;
-    p.headPitch = 0.55;
-    p.headYaw = 0.35;
-    p.fear = 0;
+  private slumpYou(): void {
+    this.viewer.dead = true;
+    this.camPos.set(0, 1.12, 1.35);
+    this.camLook.set(0, 0.7, -0.3);
+    this.viewer.setLimbsVisible(false);
+  }
+
+  /** Adds camera shake (0.1 is a solid jolt). */
+  jolt(amount: number): void {
+    this.shake = Math.max(this.shake, amount);
   }
 
   /** Serialises animations: a new one always waits for the previous to finish. */
@@ -491,25 +536,28 @@ export class Stage3D {
   }
 
   hurtSeat(seat: number): void {
-    const p = this.people[this.slot(seat)];
-    if (p.dead) return;
-    this.hurt(p, new THREE.Vector3((Math.random() < 0.5 ? 1 : -1) * 0.28, 0.5, 0.1), 1);
+    const idx = this.slot(seat);
+    if (idx === 0) {
+      this.jolt(0.1);
+      return;
+    }
+    const m = this.men[idx]!;
+    if (!m.dead) void this.hitReaction(m);
   }
 
   killSeat(seat: number): void {
     const idx = this.slot(seat);
-    const p = this.people[idx];
-    if (p.dead) return;
-    p.dead = true;
-    p.lookOn = false;
-    p.mode = "dead";
-    void this.tweens.prop(p, "fear", 0, 0.3);
-    void this.tweens.prop(p, "lean", 1.1, 1.1, ease.in);
-    void this.tweens.prop(p, "headPitch", 0.5, 1.1);
+    if (idx === 0) {
+      if (!this.viewer.dead) void this.youDie();
+      return;
+    }
+    const m = this.men[idx]!;
+    if (!m.dead) void this.die(m, new THREE.Vector3(0, 0, -1));
   }
 
   ejectShell(live: boolean): void {
-    this.spawnShell(live);
+    this.gun.updateMatrixWorld(true);
+    this.spawnShell(live, this.gunModel.localToWorld(new THREE.Vector3(0.04, 0.03, -0.02)), this.gun.quaternion);
   }
 
   // ================================================================== shot choreography
@@ -518,162 +566,223 @@ export class Stage3D {
     const f = fast ? 0.25 : 1;
     const sIdx = this.slot(shooterSeat);
     const tIdx = this.slot(targetSeat);
-    const s = this.people[sIdx];
-    const t = this.people[tIdx];
-    const self = sIdx === tIdx;
-    this.holder = sIdx;
+    this.shot = { sIdx, tIdx, self: sIdx === tIdx, dir: new THREE.Vector3(0, 0, -1), hitHead: new THREE.Vector3() };
+    if (sIdx === 0) await this.viewerAim(tIdx, f);
+    else await this.manAim(sIdx, tIdx, f);
+  }
 
-    // 1. lean in and reach for the gun
-    for (const p of this.people) {
-      p.lookTarget.copy(this.gun.position).add(new THREE.Vector3(0, 0.1, 0));
-      p.lookOn = !p.dead;
-    }
+  /** You shoot: your own arms bring the gun up, stock in the shoulder. */
+  private async viewerAim(tIdx: number, f: number): Promise<void> {
+    const s = this.viewer;
+    const sh = this.shot!;
+    this.holder = 0;
     s.mode = "gun";
     s.hand_speed = 9;
     s.showHands = [false, false];
     this.fistMat.color.setHex(s.skinHex);
-    for (const f of this.fists) f.visible = true;
+    for (const x of this.fists) x.visible = true;
+    s.setLimbsVisible(true);
     await this.tweens.prop(s, "lean", 0.42, 0.45 * f, ease.out);
 
-    // 2. lift it and bring it up to aim
     s.hand_speed = 34;
     const targetHead = this.headOf(tIdx);
-    const hold = this.holdPose(s, targetHead, self);
+    const hold = this.holdPose(s, targetHead, sh.self);
     this.holdPos.copy(hold.pos);
-    const aimDir = hold.dir.clone();
-    const lifts: Promise<unknown>[] = [
-      this.moveGun(hold.pos, hold.quat, 0.75 * f),
-      this.tweens.prop(s, "lean", 0.1, 0.7 * f),
-    ];
-    if (!self) lifts.push(this.tweens.prop(s, "twist", this.yawTo(s, targetHead) * 0.55, 0.7 * f));
-    for (const p of this.people) if (p !== s) p.lookTarget.copy(hold.pos);
+    sh.dir.copy(hold.dir);
+    sh.hitHead.copy(targetHead);
+    const lifts: Promise<unknown>[] = [this.moveGun(hold.pos, hold.quat, 0.75 * f), this.tweens.prop(s, "lean", 0.1, 0.7 * f)];
+    if (!sh.self) lifts.push(this.tweens.prop(s, "twist", this.yawTo(s, targetHead) * 0.55, 0.7 * f));
     s.lookTarget.copy(targetHead);
     await Promise.all(lifts);
     this.aiming = true;
-    this.shot = { s, t, sIdx, tIdx, self, aimDir, targetHead };
 
-    // 3. tension: nobody moves, the camera creeps toward the muzzle and the victim
+    // tension: the camera creeps toward the muzzle and the victim
     const look = hold.pos.clone().lerp(targetHead, 0.7);
-    const toPos = this.restCam.clone().add(new THREE.Vector3(0, -0.12, -0.3));
-    void this.blend(this.camPos, toPos, 1.4 * f);
+    void this.blend(this.camPos, this.restCam.clone().add(new THREE.Vector3(0, -0.12, -0.3)), 1.4 * f);
     void this.blend(this.camLook, look, 1.4 * f);
-    void this.tweens.prop(this, "fov", 36, 1.4 * f);
-    void this.tweens.prop(t, "fear", 1, 0.8 * f);
-    for (const p of this.people) if (p !== s && p !== t) void this.tweens.prop(p, "fear", 0.35, 0.8 * f);
-    t.lookTarget.copy(hold.pos).addScaledVector(aimDir, 0.5);
+    void this.tweens.prop(this, "fov", 40, 1.4 * f);
+    const victim = tIdx === 0 ? null : this.men[tIdx]!;
+    if (victim) void this.tweens.prop(victim, "fear", 1, 0.8 * f);
     await this.tweens.wait(1.2 * f);
+  }
+
+  /** An opponent shoots: the gun slides to him, he lifts it (swap to the aiming photograph). */
+  private async manAim(sIdx: number, tIdx: number, f: number): Promise<void> {
+    const m = this.men[sIdx]!;
+    const sh = this.shot!;
+    const pose: PhotoPose = sh.self ? "chin" : tIdx === 0 ? "forward" : "aim";
+    const flip = pose === "aim" && sIdx === 2; // the left-hand man points right in the photo; the right-hand man is mirrored
+    this.holder = -1;
+
+    // he leans over the table and drags the gun to himself
+    const seat = m.seatWorld();
+    const hand = new THREE.Vector3(seat.x, GUN_REST_Y, seat.z + 0.32);
+    void this.tweens.prop(m.offset, "z", 0.05, 0.4 * f, ease.out);
+    await this.moveGun(hand, this.gun.quaternion.clone(), 0.4 * f, 0.03);
+    await m.fadeTo(pose, flip, 0.2 * f, this.tweens); // he is holding it now
+    this.gun.visible = false;
+
+    // where the shot will go
+    const muzzle = m.muzzleWorld();
+    const victimHead = this.headOf(tIdx);
+    sh.hitHead.copy(victimHead);
+    if (pose === "chin") sh.dir.set(0, 1, -0.05).normalize();
+    else sh.dir.copy(victimHead).sub(muzzle).normalize();
+
+    // tension: the camera creeps toward him, the victim starts to sweat
+    const head = m.headWorld();
+    let look = head.clone();
+    let fov = 42;
+    if (pose === "aim") {
+      look = head.clone().lerp(victimHead, 0.5);
+      fov = 46;
+    }
+    const camTo = this.restCam.clone().lerp(head, 0.22).add(new THREE.Vector3(0, -0.1, 0));
+    void this.blend(this.camPos, camTo, 1.6 * f);
+    void this.blend(this.camLook, look, 1.6 * f);
+    void this.tweens.prop(this, "fov", fov, 1.6 * f);
+    const victim = tIdx === sIdx || tIdx === 0 ? null : this.men[tIdx]!;
+    if (victim) void this.tweens.prop(victim, "fear", 1, 0.9 * f);
+    if (tIdx === 0) this.jolt(0.015);
+    await this.tweens.wait(1.6 * f);
+  }
+
+  private firePoint(): THREE.Vector3 {
+    const sh = this.shot!;
+    if (sh.sIdx === 0) {
+      this.gun.updateMatrixWorld(true);
+      return this.gunModel.localToWorld(MUZZLE.clone());
+    }
+    return this.men[sh.sIdx]!.muzzleWorld();
   }
 
   private async doResolve(live: boolean, lethal: boolean): Promise<void> {
     const sh = this.shot!;
-    const { s, t, tIdx, aimDir, targetHead } = sh;
     this.aiming = false;
+    const shooterMan = sh.sIdx === 0 ? null : this.men[sh.sIdx]!;
+    const victimMan = sh.tIdx === 0 ? null : this.men[sh.tIdx]!;
+
     if (!live) {
       // the hammer falls on nothing: a twitch, a flinch, then relief
-      void this.tweens.run(0.14, (k) => (this.gunModel.rotation.x = Math.sin(k * Math.PI) * 0.03), ease.linear);
-      void this.tweens.prop(t, "blink", 1, 0.06);
-      void this.tweens.prop(t, "lean", t.lean - 0.12, 0.08);
-      await this.tweens.wait(0.45);
-      void this.tweens.prop(t, "blink", 0, 0.35);
-      void this.tweens.prop(t, "lean", 0, 0.5);
-      void this.tweens.prop(t, "fear", 0, 0.8);
+      if (shooterMan) void this.tweens.run(0.16, (k) => (shooterMan.offset.y = -0.012 * Math.sin(k * Math.PI)), ease.linear);
+      else void this.tweens.run(0.14, (k) => (this.gunModel.rotation.x = Math.sin(k * Math.PI) * 0.03), ease.linear);
+      if (victimMan && victimMan !== shooterMan) void this.tweens.run(0.3, (k) => (victimMan.squash = 0.04 * Math.sin(k * Math.PI)), ease.linear);
+      else if (!victimMan) this.jolt(0.03);
+      await this.tweens.wait(0.5);
+      if (victimMan) void this.tweens.prop(victimMan, "fear", 0, 0.8);
       await this.tweens.wait(0.5);
       return;
     }
-    const from = this.muzzleWorld();
-    this.muzzleFx();
-    if (lethal) {
-      this.slowmo(0.18, 1100);
-      this.tracer(from, targetHead);
-      t.dead = true;
-      await this.tweens.wait(0.1);
-      this.burst(targetHead, aimDir, 40, 0xa60505, 0.014, 0.7, 2.6, -5);
-      this.shake = Math.max(this.shake, 0.12);
-      t.lookOn = false;
-      t.mode = "dead";
-      t.blink = 0;
-      void this.tweens.prop(t, "headPitch", -0.85, 0.12);
-      void this.tweens.prop(t, "lean", -0.4, 0.14);
-      void this.tweens.prop(t, "fear", 0, 0.2);
-      await this.tweens.wait(0.55);
-      void this.tweens.prop(t, "lean", 1.15, 1.0, ease.in);
-      void this.tweens.prop(t, "headPitch", 0.55, 1.0);
-      void this.tweens.prop(t, "headYaw", 0.35, 1.0);
-      await this.tweens.wait(1.05);
+
+    const from = this.firePoint();
+    const dir = sh.dir.clone();
+    this.muzzleFx(from, dir, shooterMan);
+    // where the pellets land: the head for a lethal shot, otherwise the shoulder
+    const head = sh.hitHead.clone();
+    let hit = head.clone();
+    if (!lethal) hit = sh.tIdx === 0 ? head.clone().add(new THREE.Vector3(0.14, -0.2, 0)) : this.torsoOf(sh.tIdx).add(new THREE.Vector3(0.13, 0.1, 0.03));
+    if (sh.self && shooterMan) hit = lethal ? head.clone().add(new THREE.Vector3(0, 0.25, 0)) : head.clone().add(new THREE.Vector3(0.12, 0.1, 0));
+    this.slowmo(lethal ? 0.18 : 0.4, lethal ? 1100 : 600);
+    this.tracer(from, hit);
+    await this.tweens.wait(0.1);
+    this.burst(hit, dir, lethal ? 40 : 16, 0xa60505, 0.014, 0.7, lethal ? 2.6 : 2.2, -5);
+    this.jolt(lethal ? 0.12 : 0.1);
+
+    if (sh.tIdx === 0) {
+      if (lethal) await this.youDie();
+      else await this.tweens.wait(0.9);
       return;
     }
-    // a live shell that does not kill: it clips the shoulder
-    this.slowmo(0.4, 600);
-    const local = t.root.worldToLocal(s.root.position.clone());
-    const side = local.x >= 0 ? 1 : -1;
-    const wound = new THREE.Vector3(side * 0.3, 0.52, 0.08);
-    const woundWorld = t.torso.localToWorld(wound.clone());
-    this.tracer(from, woundWorld);
-    await this.tweens.wait(0.1);
-    this.burst(woundWorld, aimDir, 16, 0xa60505, 0.014, 0.7, 2.2, -5);
-    this.shake = Math.max(this.shake, 0.1);
-    this.hurt(t, wound, side);
-    await this.tweens.wait(1.0);
+    const t = this.men[sh.tIdx]!;
+    if (lethal) await this.die(t, dir);
+    else await this.hitReaction(t);
   }
 
   private async doFinish(live: boolean): Promise<void> {
     const sh = this.shot;
     if (!sh) return;
-    const { s } = sh;
     this.aiming = false;
-    // work the pump, the shell flies out
-    await this.tweens.run(0.16, (k) => (this.pump.position.z = PUMP_Z + 0.16 * k), ease.out);
-    this.spawnShell(live);
-    await this.tweens.run(0.16, (k) => (this.pump.position.z = PUMP_Z + 0.16 - 0.16 * k), ease.linear);
-    // camera back to the resting view, gun back to the table
-    void this.blend(this.camPos, this.restCam, 1.0);
-    void this.blend(this.camLook, REST_LOOK, 1.0);
-    void this.tweens.prop(this, "fov", REST_FOV, 1.0);
     const rest = this.restXform(Math.random() * 1.6 - 0.8 + (Math.random() < 0.5 ? Math.PI : 0));
-    await this.moveGun(rest.pos, rest.quat, 0.7, 0.2);
-    this.holder = -1;
-    for (const f of this.fists) f.visible = false;
-    for (const p of this.people) {
-      p.showHands = [true, true];
-      p.mode = p.dead ? "dead" : "idle";
-      p.lookTarget.set(0, 1, 0);
-      p.lookOn = !p.dead;
-      p.hand_speed = 9;
+    if (sh.sIdx === 0) {
+      // work the pump, the shell flies out, the gun goes back to the table
+      await this.tweens.run(0.16, (k) => (this.pump.position.z = PUMP_Z + 0.16 * k), ease.out);
+      this.gun.updateMatrixWorld(true);
+      this.spawnShell(live, this.gunModel.localToWorld(new THREE.Vector3(0.04, 0.03, -0.02)), this.gun.quaternion);
+      await this.tweens.run(0.16, (k) => (this.pump.position.z = PUMP_Z + 0.16 - 0.16 * k), ease.linear);
+      if (!this.viewer.dead) {
+        void this.blend(this.camPos, this.restCam, 1.0);
+        void this.blend(this.camLook, REST_LOOK, 1.0);
+        void this.tweens.prop(this, "fov", REST_FOV, 1.0);
+      }
+      await this.moveGun(rest.pos, rest.quat, 0.7, 0.2);
+      this.holder = -1;
+      for (const x of this.fists) x.visible = false;
+      this.viewer.showHands = [true, true];
+      this.viewer.mode = "idle";
+      this.viewer.setLimbsVisible(false);
+      void this.tweens.prop(this.viewer, "twist", 0, 0.6);
+      void this.tweens.prop(this.viewer, "lean", 0, 0.6);
+    } else {
+      const m = this.men[sh.sIdx]!;
+      // he puts the gun back and sits back; a spent shell is flung out
+      if (!this.viewer.dead) {
+        void this.blend(this.camPos, this.restCam, 1.0);
+        void this.blend(this.camLook, REST_LOOK, 1.0);
+        void this.tweens.prop(this, "fov", REST_FOV, 1.0);
+      }
+      const handPos = m.seatWorld().add(new THREE.Vector3(0, 0.1, 0.3));
+      this.spawnShell(live, m.torsoWorld().add(new THREE.Vector3(0, 0.1, 0.2)), new THREE.Quaternion());
+      void this.tweens.prop(m.offset, "z", 0, 0.5);
+      if (!m.dead) void m.fadeTo("rest", false, 0.3, this.tweens);
+      this.gun.position.copy(handPos);
+      this.gun.quaternion.copy(rest.quat);
+      this.gun.visible = true;
+      await this.moveGun(rest.pos, rest.quat, 0.55, 0.06);
     }
-    void this.tweens.prop(s, "twist", 0, 0.6);
-    if (!s.dead) void this.tweens.prop(s, "lean", 0, 0.6);
-    for (const p of this.people) if (!p.dead) void this.tweens.prop(p, "fear", 0, 0.6);
+    for (const m of this.men) if (m && !m.dead) void this.tweens.prop(m, "fear", 0, 0.6);
     this.shot = null;
   }
 
-  private hurt(t: Person, wound: THREE.Vector3, side: number): void {
-    const handIdx = side > 0 ? 0 : 1; // the opposite hand covers the wound
-    void this.tweens.prop(t, "lean", -0.45, 0.1);
+  /** The shot hits but does not kill: the hit photograph, a jolt, then he sits back up. */
+  private async hitReaction(t: PhotoMan): Promise<void> {
     void this.tweens.prop(t, "fear", 1, 0.1);
-    void this.tweens.prop(t, "headPitch", 0.25, 0.3);
-    t.custom[handIdx] = wound;
-    t.hand_speed = 20;
-    void this.tweens.wait(0.1).then(() => this.tweens.prop(t, "lean", 0.28, 0.6, ease.out));
-    void this.tweens.wait(1.7).then(() => {
-      t.custom[handIdx] = null;
-      t.hand_speed = 9;
-      void this.tweens.prop(t, "lean", 0, 0.8);
-      void this.tweens.prop(t, "headPitch", 0, 0.8);
-      void this.tweens.prop(t, "fear", 0, 1.0);
-    });
+    void this.tweens.run(0.5, (k) => (t.offset.z = -0.07 * Math.sin(Math.min(1, k * 1.6) * Math.PI * 0.5) * (1 - k * 0.6)), ease.linear);
+    await t.fadeTo("hit", false, 0.08, this.tweens);
+    await this.tweens.wait(1.3);
+    if (t.dead) return;
+    await t.fadeTo("rest", false, 0.35, this.tweens);
+    void this.tweens.prop(t, "fear", 0, 0.8);
+    t.offset.z = 0;
+  }
+
+  /** Dead: the head snaps along the bullet, then the dead photograph (slumped over the table). */
+  private async die(t: PhotoMan, dir: THREE.Vector3): Promise<void> {
+    t.dead = true;
+    void this.tweens.prop(t, "fear", 0, 0.1);
+    void this.tweens.run(0.25, (k) => (t.offset.x = dir.x * 0.06 * Math.sin(k * Math.PI * 0.5)), ease.linear);
+    void this.tweens.prop(t, "roll", dir.x > 0 ? -0.06 : 0.06, 0.2);
+    await t.fadeTo("dead", false, 0.12, this.tweens);
+    await this.tweens.wait(0.5);
+    void this.tweens.prop(t.offset, "x", 0, 0.5);
+    void this.tweens.prop(t, "roll", 0, 0.5);
+    void this.tweens.prop(t.offset, "z", 0.04, 0.5);
+    await this.tweens.wait(0.5);
+  }
+
+  /** Your own head: the camera snaps back, then slumps onto the table. */
+  private async youDie(): Promise<void> {
+    this.viewer.dead = true;
+    this.jolt(0.16);
+    this.viewer.setLimbsVisible(false);
+    void this.blend(this.camPos, new THREE.Vector3(0, 2.25, 3.3), 0.14);
+    await this.tweens.wait(0.5);
+    void this.blend(this.camPos, new THREE.Vector3(0, 1.12, 1.35), 1.0, ease.in);
+    void this.blend(this.camLook, new THREE.Vector3(0, 0.7, -0.3), 1.0);
+    void this.tweens.prop(this, "fov", REST_FOV, 1.0);
+    await this.tweens.wait(1.0);
   }
 
   // ================================================================== effects
-
-  private blend(v: THREE.Vector3, to: THREE.Vector3, dur: number, e = ease.inOut): Promise<void> {
-    const from = v.clone();
-    return this.tweens.run(dur, (k) => v.lerpVectors(from, to, k), e);
-  }
-
-  private muzzleWorld(): THREE.Vector3 {
-    this.gun.updateMatrixWorld(true);
-    return this.gunModel.localToWorld(MUZZLE.clone());
-  }
 
   private slowmo(scale: number, realMs: number): void {
     this.timeScale = scale;
@@ -681,28 +790,56 @@ export class Stage3D {
     this.slowmoTimer = setTimeout(() => (this.timeScale = 1), realMs);
   }
 
-  private muzzleFx(): void {
-    this.flashMesh.visible = true;
-    this.flashMesh.scale.set(1, 1, 1);
-    this.flashMesh.rotation.z = Math.random() * Math.PI;
+  /** Muzzle flash + smoke at a world position, flaring along `dir`; the shooter kicks back. */
+  private muzzleFx(pos: THREE.Vector3, dir: THREE.Vector3, shooterMan: PhotoMan | null): void {
+    this.flash.visible = true;
+    this.flash.position.copy(pos);
+    this.flash.quaternion.copy(lookQuat(dir));
+    this.flash.scale.set(1, 1, 1);
     this.flashLight.intensity = 60;
+    this.flashGlow.scale.set(0.55, 0.55, 1);
     void this.tweens.run(0.18, (k) => (this.flashLight.intensity = 60 * (1 - k)), ease.linear);
-    void this.tweens.run(0.12, (k) => this.flashMesh.scale.set(1 - k * 0.8, 1 - k * 0.8, 1 - k * 0.6), ease.linear).then(() => (this.flashMesh.visible = false));
-    // recoil: the gun kicks back and up, then settles
-    void this.tweens.run(0.05, (k) => {
-      this.gunModel.position.z = 0.1 * k;
-      this.gunModel.rotation.x = -0.22 * k;
-    }, ease.out).then(() =>
-      this.tweens.run(0.5, (k) => {
-        const e = 1 - ease.elasticOut(k);
-        this.gunModel.position.z = 0.1 * e;
-        this.gunModel.rotation.x = -0.22 * e;
-      }, ease.linear),
-    );
-    const m = this.muzzleWorld();
-    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.gun.quaternion);
-    this.burst(m, dir, 26, 0xb8b2aa, 0.05, 0.6, 1.8, 0.35, 1.4, 0.55, true);
-    this.shake = Math.max(this.shake, 0.07);
+    void this.tweens
+      .run(
+        0.13,
+        (k) => {
+          this.flash.scale.set(1 - k * 0.8, 1 - k * 0.8, 1 - k * 0.6);
+          this.flashGlow.scale.setScalar(0.55 * (1 - k));
+        },
+        ease.linear,
+      )
+      .then(() => (this.flash.visible = false));
+    if (shooterMan) {
+      // the whole man kicks back and settles
+      void this.tweens
+        .run(0.05, (k) => (shooterMan.offset.y = 0.035 * k), ease.out)
+        .then(() => this.tweens.run(0.5, (k) => (shooterMan.offset.y = 0.035 * (1 - ease.elasticOut(k))), ease.linear));
+      void this.tweens.run(0.4, (k) => (shooterMan.roll = 0.03 * Math.sin(k * Math.PI)), ease.linear);
+    } else {
+      // your own gun: kicks back and up, then settles
+      void this.tweens
+        .run(
+          0.05,
+          (k) => {
+            this.gunModel.position.z = 0.1 * k;
+            this.gunModel.rotation.x = -0.22 * k;
+          },
+          ease.out,
+        )
+        .then(() =>
+          this.tweens.run(
+            0.5,
+            (k) => {
+              const e = 1 - ease.elasticOut(k);
+              this.gunModel.position.z = 0.1 * e;
+              this.gunModel.rotation.x = -0.22 * e;
+            },
+            ease.linear,
+          ),
+        );
+    }
+    this.burst(pos, dir, 26, 0xb8b2aa, 0.05, 0.6, 1.8, 0.35, 1.4, 0.55, true);
+    this.jolt(0.07);
   }
 
   /** The wad of shot: one pellet straight at the target plus a few that spread a little (a shotgun, not a rifle). */
@@ -759,7 +896,7 @@ export class Stage3D {
     }
   }
 
-  private spawnShell(live: boolean): void {
+  private spawnShell(live: boolean, at: THREE.Vector3, q: THREE.Quaternion): void {
     const shell = new THREE.Group();
     const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.0145, 0.05, 12), mat(live ? 0xc4281c : 0x3f68c8, 0.35));
     hull.position.y = 0.0075;
@@ -767,13 +904,11 @@ export class Stage3D {
     brass.position.y = -0.0245;
     hull.castShadow = brass.castShadow = true;
     shell.add(hull, brass);
-    const mesh = shell as unknown as THREE.Mesh;
-    this.gun.updateMatrixWorld(true);
-    shell.position.copy(this.gunModel.localToWorld(new THREE.Vector3(0.04, 0.03, -0.02)));
-    const out = new THREE.Vector3(1, 0, 0.2).applyQuaternion(this.gun.quaternion).normalize();
+    shell.position.copy(at);
+    const out = new THREE.Vector3(1, 0, 0.2).applyQuaternion(q).normalize();
     const vel = out.multiplyScalar(1 + Math.random() * 0.6).add(new THREE.Vector3(0, 1.4 + Math.random() * 0.6, 0));
     this.scene.add(shell);
-    this.shells.push({ mesh, vel, spin: new THREE.Vector3((Math.random() - 0.5) * 28, 0, (Math.random() - 0.5) * 14), landed: false, age: 0 });
+    this.shells.push({ mesh: shell as unknown as THREE.Mesh, vel, spin: new THREE.Vector3((Math.random() - 0.5) * 28, 0, (Math.random() - 0.5) * 14), landed: false, age: 0 });
   }
 
   private updateShells(dt: number): void {
@@ -800,4 +935,3 @@ export class Stage3D {
     }
   }
 }
-

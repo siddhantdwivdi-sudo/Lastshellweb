@@ -93,8 +93,9 @@ export class Person {
   private hy = 0;
   private hp = 0;
   private first = true;
+  private limbsOn = true;
 
-  constructor(world: THREE.Object3D, id: number, shirt: number, hair: number, skinTone: number) {
+  constructor(world: THREE.Object3D, id: number, shirt: number, hair: number, skinTone: number, longSleeves = false) {
     this.id = id;
     this.skinHex = skinTone;
     const wood = mat(0x2a1a11, 0.6);
@@ -143,9 +144,10 @@ export class Person {
 
     // arms are unit-height cylinders the solver stretches between two points (they live in the world)
     for (let i = 0; i < 2; i++) {
-      const up = cyl(world, 0.06, 1, 0, 0, 0, shirtM);
-      const low = cyl(world, 0.052, 1, 0, 0, 0, skin);
-      const elbow = ball(world, 0.062, 0, 0, 0, shirtM);
+      const r = longSleeves ? 0.046 : 0.06;
+      const up = cyl(world, r, 1, 0, 0, 0, shirtM);
+      const low = cyl(world, r * 0.9, 1, 0, 0, 0, longSleeves ? shirtM : skin);
+      const elbow = ball(world, r * 1.03, 0, 0, 0, shirtM);
       const hand = ball(world, 0.07, 0, 0, 0, skin);
       this.limbs.push({ up, low, elbow, hand });
     }
@@ -156,6 +158,7 @@ export class Person {
   }
 
   setLimbsVisible(on: boolean): void {
+    this.limbsOn = on;
     for (const l of this.limbs) {
       l.up.visible = l.low.visible = l.elbow.visible = l.hand.visible = on;
     }
@@ -222,7 +225,7 @@ export class Person {
       place(l.low, elbow, hand);
       l.elbow.position.copy(elbow);
       l.hand.position.copy(hand);
-      l.hand.visible = this.showHands[i];
+      l.hand.visible = this.limbsOn && this.showHands[i];
     }
     this.first = false;
   }
