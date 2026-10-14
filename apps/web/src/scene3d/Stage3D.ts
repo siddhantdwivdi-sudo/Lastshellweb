@@ -15,9 +15,9 @@ const HAIR = [0x1a120d, 0x8c6633, 0x0d0d0f];
 const SKIN = [0xd9a684, 0x9e6e52, 0xedc2a3];
 const SEAT_R = 1.3;
 const SLOT_DIRS = [new THREE.Vector3(0, 0, 1), new THREE.Vector3(-0.866, 0, -0.5), new THREE.Vector3(0.866, 0, -0.5)];
-const REST_CAM = new THREE.Vector3(0, 2.15, 2.95);
-const REST_LOOK = new THREE.Vector3(0, 1.0, -0.4);
-const REST_FOV = 54;
+const REST_CAM = new THREE.Vector3(0, 3.0, 4.05);
+const REST_LOOK = new THREE.Vector3(0, 0.9, -0.2);
+const REST_FOV = 50;
 const GUN_REST_Y = 0.99;
 const MUZZLE = new THREE.Vector3(0, 0.03, -0.62);
 
@@ -88,7 +88,6 @@ export class Stage3D {
   private chain: Promise<void> = Promise.resolve();
   private slowmoTimer: ReturnType<typeof setTimeout> | null = null;
   /** 0..1: how far the local player's own view has "died" (camera slumps, goes dark). */
-  deathFade = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -109,7 +108,6 @@ export class Stage3D {
       this.scene.add(p.root);
       this.people.push(p);
     }
-    this.people[0].setFirstPerson(true);
 
     this.flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), glow(0xffcc59));
     this.flashMesh.position.copy(MUZZLE).add(new THREE.Vector3(0, 0, -0.1));
@@ -173,7 +171,7 @@ export class Stage3D {
     // narrow screens (phones held upright): pull the camera back so both opponents stay in frame
     const scale = Math.min(1.9, Math.max(1, Math.pow(1.7 / aspect, 0.55)));
     this.restCam.copy(REST_LOOK).addScaledVector(REST_CAM.clone().sub(REST_LOOK), scale);
-    if (this.holder < 0 && !this.shot && !this.people[0].dead) this.camPos.copy(this.restCam);
+    if (this.holder < 0 && !this.shot) this.camPos.copy(this.restCam);
     this.camera.setViewOffset(w, h, 0, Math.round(hudPx * 0.5), w, h);
     this.camera.updateProjectionMatrix();
   }
@@ -299,7 +297,7 @@ export class Stage3D {
 
   /** World position of a person's head; for the local player that is the camera. */
   private headOf(idx: number): THREE.Vector3 {
-    return idx === 0 ? this.restCam.clone() : this.people[idx].headWorld();
+    return this.people[idx].headWorld();
   }
 
   private restXform(yaw: number): { pos: THREE.Vector3; quat: THREE.Quaternion } {
@@ -349,7 +347,6 @@ export class Stage3D {
     this.aiming = false;
     this.shot = null;
     this.shake = 0;
-    this.deathFade = 0;
     this.camPos.copy(this.restCam);
     this.camLook.copy(REST_LOOK);
     this.fov = REST_FOV;
@@ -365,7 +362,6 @@ export class Stage3D {
       p.resetPose();
       p.lookTarget.set(0, 1, 0);
     }
-    this.people[0].setLimbsVisible(false);
   }
 
   /** Seats are fixed for the whole match: which slot each seat sits in, from my point of view. */
@@ -386,7 +382,7 @@ export class Stage3D {
       else if (alive[seat] && hp[seat] > 0 && p.dead) p.resetPose();
     }
     const cur = this.slot(current);
-    const show = awaiting && alive[current] && cur !== 0;
+    const show = awaiting && alive[current];
     this.turnLight.visible = show;
     if (show) {
       this.turnLight.color.setHex(PLAYER_HEX[cur]);
@@ -404,14 +400,6 @@ export class Stage3D {
     p.headPitch = 0.55;
     p.headYaw = 0.35;
     p.fear = 0;
-    if (idx === 0) this.setYouDead();
-  }
-
-  private setYouDead(): void {
-    this.camPos.set(0, 1.12, 1.35);
-    this.camLook.set(0, 0.7, -0.3);
-    this.deathFade = 1;
-    this.people[0].setLimbsVisible(false);
   }
 
   /** Serialises animations: a new one always waits for the previous to finish. */
@@ -436,8 +424,7 @@ export class Stage3D {
   hurtSeat(seat: number): void {
     const p = this.people[this.slot(seat)];
     if (p.dead) return;
-    if (this.slot(seat) === 0) this.shake = Math.max(this.shake, 0.1);
-    else this.hurt(p, new THREE.Vector3((Math.random() < 0.5 ? 1 : -1) * 0.28, 0.5, 0.1), 1);
+    this.hurt(p, new THREE.Vector3((Math.random() < 0.5 ? 1 : -1) * 0.28, 0.5, 0.1), 1);
   }
 
   killSeat(seat: number): void {
@@ -447,10 +434,6 @@ export class Stage3D {
     p.dead = true;
     p.lookOn = false;
     p.mode = "dead";
-    if (idx === 0) {
-      void this.youDie();
-      return;
-    }
     void this.tweens.prop(p, "fear", 0, 0.3);
     void this.tweens.prop(p, "lean", 1.1, 1.1, ease.in);
     void this.tweens.prop(p, "headPitch", 0.5, 1.1);
@@ -478,7 +461,6 @@ export class Stage3D {
     }
     s.mode = "gun";
     s.hand_speed = 9;
-    if (sIdx === 0) s.setLimbsVisible(true);
     await this.tweens.prop(s, "lean", 0.42, 0.45 * f, ease.out);
 
     // 2. lift it and bring it up to aim
@@ -491,7 +473,7 @@ export class Stage3D {
       this.moveGun(hold.pos, hold.quat, 0.75 * f),
       this.tweens.prop(s, "lean", 0.1, 0.7 * f),
     ];
-    if (!self && sIdx !== 0) lifts.push(this.tweens.prop(s, "twist", this.yawTo(s, targetHead) * 0.55, 0.7 * f));
+    if (!self) lifts.push(this.tweens.prop(s, "twist", this.yawTo(s, targetHead) * 0.55, 0.7 * f));
     for (const p of this.people) if (p !== s) p.lookTarget.copy(hold.pos);
     s.lookTarget.copy(targetHead);
     await Promise.all(lifts);
@@ -499,11 +481,11 @@ export class Stage3D {
     this.shot = { s, t, sIdx, tIdx, self, aimDir, targetHead };
 
     // 3. tension: nobody moves, the camera creeps toward the muzzle and the victim
-    const look = tIdx === 0 ? REST_LOOK.clone().lerp(hold.pos, 0.35) : hold.pos.clone().lerp(targetHead, 0.7);
+    const look = hold.pos.clone().lerp(targetHead, 0.7);
     const toPos = this.restCam.clone().add(new THREE.Vector3(0, -0.12, -0.3));
     void this.blend(this.camPos, toPos, 1.4 * f);
     void this.blend(this.camLook, look, 1.4 * f);
-    void this.tweens.prop(this, "fov", tIdx === 0 ? 47 : 40, 1.4 * f);
+    void this.tweens.prop(this, "fov", 36, 1.4 * f);
     void this.tweens.prop(t, "fear", 1, 0.8 * f);
     for (const p of this.people) if (p !== s && p !== t) void this.tweens.prop(p, "fear", 0.35, 0.8 * f);
     t.lookTarget.copy(hold.pos).addScaledVector(aimDir, 0.5);
@@ -535,10 +517,6 @@ export class Stage3D {
       await this.tweens.wait(0.1);
       this.burst(targetHead, aimDir, 40, 0xa60505, 0.014, 0.7, 2.6, -5);
       this.shake = Math.max(this.shake, 0.12);
-      if (tIdx === 0) {
-        await this.youDie();
-        return;
-      }
       t.lookOn = false;
       t.mode = "dead";
       t.blink = 0;
@@ -558,11 +536,11 @@ export class Stage3D {
     const side = local.x >= 0 ? 1 : -1;
     const wound = new THREE.Vector3(side * 0.3, 0.52, 0.08);
     const woundWorld = t.torso.localToWorld(wound.clone());
-    this.tracer(from, tIdx === 0 ? this.camPos.clone().add(new THREE.Vector3(0.12, -0.1, 0)) : woundWorld);
+    this.tracer(from, woundWorld);
     await this.tweens.wait(0.1);
     this.burst(woundWorld, aimDir, 16, 0xa60505, 0.014, 0.7, 2.2, -5);
     this.shake = Math.max(this.shake, 0.1);
-    if (tIdx !== 0) this.hurt(t, wound, side);
+    this.hurt(t, wound, side);
     await this.tweens.wait(1.0);
   }
 
@@ -576,11 +554,9 @@ export class Stage3D {
     this.spawnShell(live);
     await this.tweens.run(0.16, (k) => (this.pump.position.z = -0.1 - 0.18 * k), ease.linear);
     // camera back to the resting view, gun back to the table
-    if (!this.people[0].dead) {
-      void this.blend(this.camPos, this.restCam, 1.0);
-      void this.blend(this.camLook, REST_LOOK, 1.0);
-      void this.tweens.prop(this, "fov", REST_FOV, 1.0);
-    }
+    void this.blend(this.camPos, this.restCam, 1.0);
+    void this.blend(this.camLook, REST_LOOK, 1.0);
+    void this.tweens.prop(this, "fov", REST_FOV, 1.0);
     const rest = this.restXform(Math.random() * 1.6 - 0.8 + (Math.random() < 0.5 ? Math.PI : 0));
     await this.moveGun(rest.pos, rest.quat, 0.7, 0.2);
     this.holder = -1;
@@ -591,7 +567,6 @@ export class Stage3D {
       p.hand_speed = 9;
     }
     void this.tweens.prop(s, "twist", 0, 0.6);
-    if (sh.sIdx === 0) s.setLimbsVisible(false);
     if (!s.dead) void this.tweens.prop(s, "lean", 0, 0.6);
     for (const p of this.people) if (!p.dead) void this.tweens.prop(p, "fear", 0, 0.6);
     this.shot = null;
@@ -612,20 +587,6 @@ export class Stage3D {
       void this.tweens.prop(t, "headPitch", 0, 0.8);
       void this.tweens.prop(t, "fear", 0, 1.0);
     });
-  }
-
-  /** Your own head: the camera snaps back, then slumps onto the table. */
-  private async youDie(): Promise<void> {
-    this.people[0].dead = true;
-    this.shake = Math.max(this.shake, 0.16);
-    this.people[0].setLimbsVisible(false);
-    void this.blend(this.camPos, new THREE.Vector3(0, 1.92, 2.0), 0.14);
-    await this.tweens.wait(0.5);
-    void this.blend(this.camPos, new THREE.Vector3(0, 1.12, 1.35), 1.0, ease.in);
-    void this.blend(this.camLook, new THREE.Vector3(0, 0.7, -0.3), 1.0);
-    void this.tweens.prop(this, "fov", REST_FOV, 1.0);
-    this.deathFade = 1;
-    await this.tweens.wait(1.0);
   }
 
   // ================================================================== effects
