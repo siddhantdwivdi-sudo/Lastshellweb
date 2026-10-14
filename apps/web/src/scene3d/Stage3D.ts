@@ -9,6 +9,7 @@
 import * as THREE from "three";
 import { box, cyl, glow, lookQuat, mat, Person, TABLE_Y } from "./Person3D";
 import { Tweens, ease } from "./tween";
+import gunSideUrl from "../assets/props/shotgun-side.png";
 
 export const PLAYER_HEX = [0xffa838, 0x66d1eb, 0xd185f2];
 const HAIR = [0x1a120d, 0x8c6633, 0x0d0d0f];
@@ -20,6 +21,9 @@ const REST_LOOK = new THREE.Vector3(0, 0.9, -0.2);
 const REST_FOV = 50;
 const GUN_REST_Y = 0.99;
 const MUZZLE = new THREE.Vector3(0, 0.03, -0.62);
+/** Resting position of the forend (the part the left hand holds) in gun space. */
+const PUMP_Z = -0.305;
+const PUMP_Y = -0.016;
 
 /** How long each server event is held on screen (see EVENT_DURATION_MS in the shared package). */
 export const SHOT_FIRED_SECONDS = 2.4;
@@ -62,7 +66,8 @@ export class Stage3D {
   private readonly gunModel = new THREE.Group();
   private readonly pump = new THREE.Group();
   private readonly barrelMat = mat(0x8a8d94, 0.28, 0.85);
-  private readonly flashMesh: THREE.Mesh;
+  private readonly flashMesh = new THREE.Group();
+  private readonly fistMat = mat(0xd9a684, 0.7);
   private readonly flashLight = new THREE.PointLight(0xffbf66, 0, 6, 2);
   private readonly turnLight = new THREE.PointLight(0xffffff, 5, 3, 2);
   private readonly dust: THREE.Points;
@@ -109,11 +114,7 @@ export class Stage3D {
       this.people.push(p);
     }
 
-    this.flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), glow(0xffcc59));
-    this.flashMesh.position.copy(MUZZLE).add(new THREE.Vector3(0, 0, -0.1));
-    this.flashMesh.scale.set(1, 1, 2.2);
-    this.flashMesh.visible = false;
-    this.gunModel.add(this.flashMesh);
+    this.buildFlash();
     this.flashLight.position.copy(MUZZLE).add(new THREE.Vector3(0, 0, -0.2));
     this.gunModel.add(this.flashLight);
     this.scene.add(this.turnLight);
@@ -188,8 +189,8 @@ export class Stage3D {
     this.gun.updateMatrixWorld(true);
     if (this.holder >= 0) {
       const p = this.people[this.holder];
-      p.goal[0].copy(this.gunModel.localToWorld(new THREE.Vector3(0, -0.1, 0.17)));
-      p.goal[1].copy(this.pump.localToWorld(new THREE.Vector3(0, -0.045, 0)));
+      p.goal[0].copy(this.gunModel.localToWorld(new THREE.Vector3(0.062, -0.048, 0.125))); // right wrist, behind the grip
+      p.goal[1].copy(this.pump.localToWorld(new THREE.Vector3(-0.07, -0.085, 0.075))); // left wrist, under the forend
     }
     for (const p of this.people) p.animate(sdt);
     this.updatePuffs(sdt);
@@ -272,21 +273,85 @@ export class Stage3D {
   private buildGun(): void {
     this.scene.add(this.gun);
     this.gun.add(this.gunModel);
-    const wood = mat(0x572b14, 0.5);
-    const dark = mat(0x1a1a1f, 0.4, 0.5);
-    box(this.gunModel, 0.07, 0.09, 0.26, 0, 0, 0, dark); // receiver
-    const barrel = cyl(this.gunModel, 0.019, 0.5, 0, 0.03, -0.37, this.barrelMat);
+    const wood = mat(0x4a2411, 0.5);
+    const dark = mat(0x16161a, 0.4, 0.6);
+    // slim cores give the gun some thickness; the photographed shotgun is draped over both sides
+    box(this.gunModel, 0.05, 0.07, 0.26, 0, -0.03, 0.0, dark);
+    const barrel = cyl(this.gunModel, 0.017, 0.5, 0, 0.03, -0.36, this.barrelMat);
     barrel.rotation.x = Math.PI / 2;
-    const tube = cyl(this.gunModel, 0.016, 0.42, 0, -0.028, -0.33, dark);
-    tube.rotation.x = Math.PI / 2;
-    const stock = box(this.gunModel, 0.06, 0.1, 0.34, 0, -0.025, 0.28, wood);
-    stock.rotation.x = THREE.MathUtils.degToRad(4);
-    box(this.gunModel, 0.05, 0.1, 0.05, 0, -0.085, 0.1, wood); // grip
-    this.pump.position.set(0, -0.05, -0.28);
+    box(this.gunModel, 0.05, 0.1, 0.34, 0, -0.045, 0.25, wood);
+    this.pump.position.set(0, PUMP_Y, PUMP_Z);
     this.gunModel.add(this.pump);
-    box(this.pump, 0.075, 0.06, 0.2, 0, 0, 0, wood);
+
+    const len = 1.02;
+    const tex = new THREE.TextureLoader().load(gunSideUrl);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    const texFlip = tex.clone();
+    texFlip.wrapS = THREE.RepeatWrapping;
+    texFlip.repeat.x = -1;
+    texFlip.offset.x = 1;
+    const geo = new THREE.PlaneGeometry(len, len * (185 / 918));
+    for (const side of [1, -1]) {
+      const m = new THREE.MeshStandardMaterial({ map: side > 0 ? tex : texFlip, alphaTest: 0.5, roughness: 0.55, metalness: 0.25 });
+      const plane = new THREE.Mesh(geo, m);
+      plane.position.set(side * 0.03, -0.057, -0.09);
+      plane.rotation.y = side * (Math.PI / 2);
+      plane.castShadow = true;
+      this.gunModel.add(plane);
+    }
     this.barrelMat.emissive = new THREE.Color(0xff7319);
     this.barrelMat.emissiveIntensity = 0;
+
+    // hands that really wrap the grip and the forend (they ride on the gun, so they never drift off it)
+    const fist = this.fistMat;
+    const R = new THREE.Group();
+    R.visible = false;
+    R.position.set(0, -0.04, 0.07);
+    box(R, 0.034, 0.09, 0.07, 0.04, 0, 0, fist); // palm against the grip
+    for (let i = 0; i < 4; i++) box(R, 0.082, 0.02, 0.03, 0.0, 0.034 - i * 0.022, -0.045, fist); // fingers around the front
+    box(R, 0.03, 0.022, 0.07, -0.038, 0.03, 0.0, fist); // thumb
+    this.gunModel.add(R);
+    const L = new THREE.Group();
+    L.visible = false;
+    box(L, 0.075, 0.03, 0.11, 0, -0.04, 0.01, fist); // palm cupping under the forend
+    for (let i = 0; i < 4; i++) box(L, 0.022, 0.07, 0.022, -0.042, -0.004, -0.045 + i * 0.03, fist); // fingers up the side
+    box(L, 0.025, 0.022, 0.06, 0.04, 0.012, -0.02, fist); // thumb
+    this.pump.add(L);
+    this.fists = [R, L];
+  }
+
+  private fists: THREE.Group[] = [];
+
+  /** Flame cards (additive) so the muzzle flash looks like a burst of fire, not a ball. */
+  private buildFlash(): void {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    const g = c.getContext("2d")!;
+    const grad = g.createLinearGradient(0, 32, 256, 32);
+    grad.addColorStop(0, "rgba(255,255,230,1)");
+    grad.addColorStop(0.25, "rgba(255,210,110,0.95)");
+    grad.addColorStop(0.7, "rgba(255,120,30,0.45)");
+    grad.addColorStop(1, "rgba(255,60,0,0)");
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(0, 32);
+    g.bezierCurveTo(60, 2, 170, 14, 256, 32);
+    g.bezierCurveTo(170, 50, 60, 62, 0, 32);
+    g.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    for (let i = 0; i < 3; i++) {
+      const card = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.2), m);
+      card.rotation.set(0, Math.PI / 2, (i * Math.PI) / 3);
+      card.position.set(0, 0, -0.37);
+      this.flashMesh.add(card);
+    }
+    this.flashMesh.position.copy(MUZZLE);
+    this.flashMesh.visible = false;
+    this.gunModel.add(this.flashMesh);
   }
 
   // ================================================================== helpers
@@ -323,10 +388,13 @@ export class Stage3D {
       const dir = head.clone().sub(from).normalize();
       return { pos: from, quat: lookQuat(dir), dir };
     }
-    const chest = s.root.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-    const dirh = new THREE.Vector3(targetHead.x - chest.x, 0, targetHead.z - chest.z).normalize();
-    const from = chest.clone().addScaledVector(dirh, 0.5).add(new THREE.Vector3(0, 0.14, 0));
-    const dir = targetHead.clone().sub(from).normalize();
+    // the stock sits in the shoulder pocket (never in the chest) and the barrel runs along the line to the target
+    const twist = this.yawTo(s, targetHead) * 0.55;
+    const torsoQ = new THREE.Quaternion().multiplyQuaternions(s.root.quaternion, new THREE.Quaternion().setFromEuler(new THREE.Euler(0.1, twist, 0, "YXZ")));
+    const pivot = s.root.localToWorld(new THREE.Vector3(0, 0.6, 0));
+    const shoulder = pivot.add(new THREE.Vector3(-0.31, 0.64, 0.02).applyQuaternion(torsoQ)); // right shoulder
+    const dir = targetHead.clone().sub(shoulder).normalize();
+    const from = shoulder.clone().addScaledVector(dir, 0.37).add(new THREE.Vector3(0, 0.03, 0));
     return { pos: from, quat: lookQuat(dir), dir };
   }
 
@@ -355,9 +423,10 @@ export class Stage3D {
     this.gun.quaternion.copy(r.quat);
     this.gunModel.position.set(0, 0, 0);
     this.gunModel.rotation.set(0, 0, 0);
-    this.pump.position.set(0, -0.05, -0.28);
+    this.pump.position.set(0, PUMP_Y, PUMP_Z);
     this.flashMesh.visible = false;
     this.flashLight.intensity = 0;
+    for (const f of this.fists) f.visible = false;
     for (const p of this.people) {
       p.resetPose();
       p.lookTarget.set(0, 1, 0);
@@ -461,6 +530,9 @@ export class Stage3D {
     }
     s.mode = "gun";
     s.hand_speed = 9;
+    s.showHands = [false, false];
+    this.fistMat.color.setHex(s.skinHex);
+    for (const f of this.fists) f.visible = true;
     await this.tweens.prop(s, "lean", 0.42, 0.45 * f, ease.out);
 
     // 2. lift it and bring it up to aim
@@ -550,9 +622,9 @@ export class Stage3D {
     const { s } = sh;
     this.aiming = false;
     // work the pump, the shell flies out
-    await this.tweens.run(0.16, (k) => (this.pump.position.z = -0.28 + 0.18 * k), ease.out);
+    await this.tweens.run(0.16, (k) => (this.pump.position.z = PUMP_Z + 0.16 * k), ease.out);
     this.spawnShell(live);
-    await this.tweens.run(0.16, (k) => (this.pump.position.z = -0.1 - 0.18 * k), ease.linear);
+    await this.tweens.run(0.16, (k) => (this.pump.position.z = PUMP_Z + 0.16 - 0.16 * k), ease.linear);
     // camera back to the resting view, gun back to the table
     void this.blend(this.camPos, this.restCam, 1.0);
     void this.blend(this.camLook, REST_LOOK, 1.0);
@@ -560,7 +632,9 @@ export class Stage3D {
     const rest = this.restXform(Math.random() * 1.6 - 0.8 + (Math.random() < 0.5 ? Math.PI : 0));
     await this.moveGun(rest.pos, rest.quat, 0.7, 0.2);
     this.holder = -1;
+    for (const f of this.fists) f.visible = false;
     for (const p of this.people) {
+      p.showHands = [true, true];
       p.mode = p.dead ? "dead" : "idle";
       p.lookTarget.set(0, 1, 0);
       p.lookOn = !p.dead;
@@ -609,10 +683,11 @@ export class Stage3D {
 
   private muzzleFx(): void {
     this.flashMesh.visible = true;
-    this.flashMesh.scale.set(1, 1, 2.2);
+    this.flashMesh.scale.set(1, 1, 1);
+    this.flashMesh.rotation.z = Math.random() * Math.PI;
     this.flashLight.intensity = 60;
     void this.tweens.run(0.18, (k) => (this.flashLight.intensity = 60 * (1 - k)), ease.linear);
-    void this.tweens.run(0.12, (k) => this.flashMesh.scale.set(1 - k * 0.9, 1 - k * 0.9, 2.2 - k * 2), ease.linear).then(() => (this.flashMesh.visible = false));
+    void this.tweens.run(0.12, (k) => this.flashMesh.scale.set(1 - k * 0.8, 1 - k * 0.8, 1 - k * 0.6), ease.linear).then(() => (this.flashMesh.visible = false));
     // recoil: the gun kicks back and up, then settles
     void this.tweens.run(0.05, (k) => {
       this.gunModel.position.z = 0.1 * k;
@@ -630,16 +705,26 @@ export class Stage3D {
     this.shake = Math.max(this.shake, 0.07);
   }
 
+  /** The wad of shot: one pellet straight at the target plus a few that spread a little (a shotgun, not a rifle). */
   private tracer(from: THREE.Vector3, to: THREE.Vector3): void {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.4), glow(0xffe68c));
-    mesh.position.copy(from);
-    mesh.quaternion.copy(lookQuat(to.clone().sub(from).normalize()));
-    this.scene.add(mesh);
-    void this.tweens.run(0.14, (k) => mesh.position.lerpVectors(from, to, k), ease.linear).then(() => {
-      this.scene.remove(mesh);
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
-    });
+    const dir = to.clone().sub(from);
+    const dist = dir.length();
+    const glowMat = glow(0xffe0a0);
+    for (let i = 0; i < 8; i++) {
+      const spread = i === 0 ? 0 : 0.03 + Math.random() * 0.07;
+      const ang = Math.random() * Math.PI * 2;
+      const side = new THREE.Vector3(Math.cos(ang), Math.sin(ang), 0).applyQuaternion(lookQuat(dir.clone().normalize())).multiplyScalar(spread);
+      const end = to.clone().add(side);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, 0.16 + (i === 0 ? 0.1 : 0)), glowMat);
+      mesh.position.copy(from);
+      mesh.quaternion.copy(lookQuat(end.clone().sub(from).normalize()));
+      this.scene.add(mesh);
+      const t = 0.1 + dist * 0.01;
+      void this.tweens.run(t, (k) => mesh.position.lerpVectors(from, end, k), ease.linear).then(() => {
+        this.scene.remove(mesh);
+        mesh.geometry.dispose();
+      });
+    }
   }
 
   private burst(pos: THREE.Vector3, dir: THREE.Vector3, n: number, color: number, size: number, vmin: number, vmax: number, gravity: number, life = 0.7, opacity = 1, smoke = false): void {
@@ -675,13 +760,19 @@ export class Stage3D {
   }
 
   private spawnShell(live: boolean): void {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.065, 8), mat(live ? 0xd92619 : 0x5980e6, 0.5));
-    mesh.castShadow = true;
+    const shell = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.0145, 0.05, 12), mat(live ? 0xc4281c : 0x3f68c8, 0.35));
+    hull.position.y = 0.0075;
+    const brass = new THREE.Mesh(new THREE.CylinderGeometry(0.0158, 0.0158, 0.02, 12), mat(0xc89b3c, 0.3, 0.9));
+    brass.position.y = -0.0245;
+    hull.castShadow = brass.castShadow = true;
+    shell.add(hull, brass);
+    const mesh = shell as unknown as THREE.Mesh;
     this.gun.updateMatrixWorld(true);
-    mesh.position.copy(this.gunModel.localToWorld(new THREE.Vector3(0.04, 0.04, 0.02)));
+    shell.position.copy(this.gunModel.localToWorld(new THREE.Vector3(0.04, 0.03, -0.02)));
     const out = new THREE.Vector3(1, 0, 0.2).applyQuaternion(this.gun.quaternion).normalize();
     const vel = out.multiplyScalar(1 + Math.random() * 0.6).add(new THREE.Vector3(0, 1.4 + Math.random() * 0.6, 0));
-    this.scene.add(mesh);
+    this.scene.add(shell);
     this.shells.push({ mesh, vel, spin: new THREE.Vector3((Math.random() - 0.5) * 28, 0, (Math.random() - 0.5) * 14), landed: false, age: 0 });
   }
 
@@ -704,8 +795,6 @@ export class Stage3D {
       }
       if (s.age > 4) {
         this.scene.remove(s.mesh);
-        s.mesh.geometry.dispose();
-        (s.mesh.material as THREE.Material).dispose();
         this.shells.splice(i, 1);
       }
     }

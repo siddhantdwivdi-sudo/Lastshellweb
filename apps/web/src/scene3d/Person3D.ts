@@ -82,6 +82,9 @@ export class Person {
   headYaw = 0;
   fear = 0;
   blink = 0;
+  /** Per hand: draw the generic hand? (off while a gun-grip hand is drawn instead.) */
+  showHands = [true, true];
+  readonly skinHex: number;
 
   private eyes: THREE.Mesh[] = [];
   private limbs: Limb[] = [];
@@ -93,6 +96,7 @@ export class Person {
 
   constructor(world: THREE.Object3D, id: number, shirt: number, hair: number, skinTone: number) {
     this.id = id;
+    this.skinHex = skinTone;
     const wood = mat(0x2a1a11, 0.6);
     const pants = mat(0x1a1a21, 0.9);
     const shirtM = mat(new THREE.Color(shirt).multiplyScalar(0.55).getHex(), 0.9);
@@ -168,6 +172,7 @@ export class Person {
     this.lookOn = true;
     this.hand_speed = 9;
     this.custom = [null, null];
+    this.showHands = [true, true];
     this.first = true;
   }
 
@@ -217,6 +222,7 @@ export class Person {
       place(l.low, elbow, hand);
       l.elbow.position.copy(elbow);
       l.hand.position.copy(hand);
+      l.hand.visible = this.showHands[i];
     }
     this.first = false;
   }
